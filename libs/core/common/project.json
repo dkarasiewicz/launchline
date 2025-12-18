@@ -1,0 +1,9 @@
+{
+  "name": "core-common",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/core/common/src",
+  "projectType": "library",
+  "tags": ["scope:core", "type:common", "target:server"],
+  "// targets": "to see all targets run: nx show project core-common --web",
+  "targets": {}
+}

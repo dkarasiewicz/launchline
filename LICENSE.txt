@@ -1,0 +1,27 @@
+Launchline Core License (Business Source License 1.1)
+
+Copyright (c) 2025 Launchline
+
+The core Launchline software in this repository is licensed under the
+Business Source License 1.1 (BSL 1.1).
+
+Licensor: Launchline
+Licensed Work: The Launchline core application and all contents of this
+               repository except where a different license is clearly
+               marked (for example, SDKs under MIT).
+Additional Use Grant: You may use, copy, modify, self-host, and distribute
+                      the Licensed Work, including for commercial purposes,
+                      provided that you do not offer the Licensed Work, or
+                      a substantially similar service, as a hosted or
+                      managed service that competes with a hosted or
+                      managed Launchline service.
+
+Change Date: *No Change Date specified at this time.*
+Change License: *No Change License specified at this time.*
+
+Until a Change Date and Change License are specified by the Licensor,
+use of the Licensed Work is governed by the BSL 1.1, available at:
+https://mariadb.com/bsl11
+
+This summary is provided for convenience only. In case of conflict, the
+full text of the BSL 1.1 controls.

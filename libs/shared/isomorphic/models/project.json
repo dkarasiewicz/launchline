@@ -1,0 +1,19 @@
+{
+  "name": "models",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/isomorphic/models/src",
+  "projectType": "library",
+  "tags": ["type:common", "target:isomorphic", "scope:models"],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/shared/isomorphic/models",
+        "main": "libs/shared/isomorphic/models/src/index.ts",
+        "tsConfig": "libs/shared/isomorphic/models/tsconfig.lib.json",
+        "assets": ["libs/shared/isomorphic/models/*.md"]
+      }
+    }
+  }
+}

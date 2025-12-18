@@ -1,0 +1,9 @@
+{
+  "name": "customer-ui",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/customer-ui",
+  "projectType": "application",
+  "tags": ["scope:customer-ui", "target:client"],
+  "// targets": "to see all targets run: nx show project customer-ui --web",
+  "targets": {}
+}

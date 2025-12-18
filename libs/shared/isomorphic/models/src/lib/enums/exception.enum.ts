@@ -1,0 +1,4 @@
+export enum DomainExceptionCode {
+  OTP_UNAVAILABLE_FOR_THIS_NUMBER = 'E1002',
+  OTP_EMAIL_VERIFICATION_FAILED = 'E1003',
+}

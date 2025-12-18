@@ -1,0 +1,9 @@
+{
+  "name": "core-workspace",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/core/workspace/src",
+  "projectType": "library",
+  "tags": ["scope:core", "type:domain", "target:server"],
+  "// targets": "to see all targets run: nx show project core-workspace --web",
+  "targets": {}
+}

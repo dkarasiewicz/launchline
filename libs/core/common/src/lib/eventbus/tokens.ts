@@ -1,0 +1,1 @@
+export const EVENT_BUS_EXCHANGE = 'EVENT_BUS_EXCHANGE';
