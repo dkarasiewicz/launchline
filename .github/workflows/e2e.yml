@@ -40,6 +40,8 @@ jobs:
 
       - run: pnpm install
 
+      - run: pnpm exec playwright install
+
       - uses: nrwl/nx-set-shas@v4
 
       # Prepend any command with "nx-cloud record --" to record its logs to Nx Cloud
