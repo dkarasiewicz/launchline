@@ -19,7 +19,10 @@
       "@launchline/core-auth": ["libs/core/auth/src/index.ts"],
       "@launchline/core-workspace": ["libs/core/workspace/src/index.ts"],
       "@launchline/core-common": ["libs/core/common/src/index.ts"],
-      "@launchline/models": ["libs/shared/isomorphic/models/src/index.ts"]
+      "@launchline/models": ["libs/shared/isomorphic/models/src/index.ts"],
+      "@launchline/ui": ["libs/shared/client/ui/src/index.ts"],
+      "@launchline/ui/*": ["libs/shared/client/ui/src/*"],
+      "@launchline/ui/server": ["libs/shared/client/ui/src/server.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]
