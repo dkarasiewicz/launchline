@@ -1,0 +1,9 @@
+{
+  "name": "core-linea",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/core/linea/src",
+  "projectType": "library",
+  "tags": ["scope:linea", "type:common", "target:server"],
+  "// targets": "to see all targets run: nx show project core-linea --web",
+  "targets": {}
+}

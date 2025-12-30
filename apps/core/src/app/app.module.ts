@@ -21,6 +21,7 @@ import {
 } from '@launchline/core-common';
 import { AuthModule } from '@launchline/core-auth';
 import { WorkspaceModule } from '@launchline/core-workspace';
+import { LineaModule } from '@launchline/core-linea';
 import { config, validate } from './configuration';
 import {
   decorateGQLSubscriptionRequest,
@@ -145,6 +146,7 @@ import {
     CommonModule,
     AuthModule,
     WorkspaceModule,
+    LineaModule,
   ],
 })
 export class AppModule {}
