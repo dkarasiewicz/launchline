@@ -96,29 +96,21 @@ You can:
 
 ---
 
+## Environment configuration
+
+Before running the application (locally or with Docker), copy `.env.example` to `.env` in the repo root and fill in the required environment variables.  
+**Do not commit real secrets or credentials.**  
+See `.env` for the full list of required variables (database, cache, API keys, etc).
+
+---
+
 ## Self‑hosting with `docker‑compose`
 
 ### Prerequisites
 
 - Docker
 - Docker Compose
-- A `.env` file in the repo root with values like:
-
-```bash
-# Core app
-LAUNCHLINE_PORT=3000
-LAUNCHLINE_APP_URL=http://localhost:3000
-
-# Database
-LAUNCHLINE_DB_URL=postgres://launchline:launchline@db:5432/launchline
-
-# Cache / queues
-LAUNCHLINE_REDIS_URL=redis://redis:6379
-
-# Provider keys (examples)
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-```
+- A `.env` file in the repo root (see above).
 
 ### Start the stack
 
@@ -128,11 +120,11 @@ From the repository root:
 docker-compose up -d
 ```
 
-This will start:
+This will start **only the development dependencies/services** needed for local development:
 
 - PostgreSQL (and Redis / RabbitMQ if configured)
-- Launchline backend API
-- Launchline web UI
+
+> The full local production-ready stack (including backend and frontend containers) will be documented later.
 
 ### Access
 
@@ -195,28 +187,26 @@ yarn install
 pnpm install
 ```
 
-2. Start local services (PostgreSQL, Redis, RabbitMQ as needed) or use `docker-compose` for infra only.
+2. Ensure your local services (PostgreSQL, Redis, RabbitMQ) are running.  
+   You can use `docker-compose up -d` to start these dependencies.
 
-3. Run database migrations (example):
+3. Create and configure your `.env` file as described above.
 
-```bash
-npm run db:migrate
-```
-
-4. Start dev servers:
+4. Run database migrations:
 
 ```bash
-# Backend API
-npm run dev:server
-
-# Web UI
-npm run dev:web
+pnpm nx migrate-run core
 ```
 
-Typical defaults:
+5. Start dev servers:
 
-- API: `http://localhost:3000`
-- Web UI: `http://localhost:3001` (or as configured)
+```bash
+# Backend API (with HMR)
+pnpm nx serve-hmr core
+
+# Frontend (customer UI)
+pnpm nx start customer-ui -p 2201
+```
 
 ---
 
