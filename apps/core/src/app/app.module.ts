@@ -14,6 +14,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { Redis } from 'ioredis';
 import type { Response, Request } from 'express';
+import { McpModule, McpTransportType } from '@rekog/mcp-nest';
 import {
   CACHE_STORE,
   CommonModule,
@@ -126,6 +127,16 @@ import {
         };
       },
       inject: [HttpAdapterHost, ConfigService, REDIS_CLIENT],
+    }),
+    McpModule.forRoot({
+      name: 'launchline-mcp',
+      version: '0.0.1',
+      transport: McpTransportType.STREAMABLE_HTTP,
+      streamableHttp: {
+        enableJsonResponse: true,
+        sessionIdGenerator: undefined,
+        statelessMode: true,
+      },
     }),
     ConfigModule.forRoot({
       isGlobal: true,
