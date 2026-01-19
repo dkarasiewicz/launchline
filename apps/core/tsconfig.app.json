@@ -2,12 +2,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "../../dist/out-tsc",
-    "module": "commonjs",
+    "module": "nodenext",
     "types": ["node"],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "target": "es2021",
-    "moduleResolution": "node"
+    "moduleResolution": "nodenext"
   },
   "include": ["src/**/*.ts"],
   "exclude": [
