@@ -16,7 +16,9 @@ import {
 import { WorkspaceService } from './workspace.service';
 
 import {
+  CreateWorkspaceInput,
   CreateWorkspaceInvitationInput,
+  CreateWorkspaceResult,
   GetWorkspaceInvitationInput,
   RedeemWorkspaceInvitationInput,
   Workspace,
@@ -67,5 +69,14 @@ export class WorkspaceResolver {
     await this.workspaceService.redeemWorkspaceInvitation(input);
 
     return true;
+  }
+
+  // @Roles(UserRole.ADMIN)
+  @Public()
+  @Mutation(() => CreateWorkspaceResult)
+  async createWorkspace(
+    @Args('input') input: CreateWorkspaceInput,
+  ): Promise<CreateWorkspaceResult> {
+    return this.workspaceService.createWorkspace(input);
   }
 }
