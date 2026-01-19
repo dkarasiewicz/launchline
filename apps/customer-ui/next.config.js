@@ -27,6 +27,34 @@ const nextConfig = {
   },
   skipTrailingSlashRedirect: true,
   cacheComponents: true,
+  // Proxy API requests to the backend
+  async rewrites() {
+    const backendUrl =
+      process.env.NEXT_PUBLIC_CORE_API_URL || 'http://localhost:3000';
+
+    return [
+      // GraphQL endpoint
+      {
+        source: '/graphql',
+        destination: `${backendUrl}/graphql`,
+      },
+      // REST API endpoints
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
+      },
+      // Auth endpoints
+      {
+        source: '/auth/:path*',
+        destination: `${backendUrl}/auth/:path*`,
+      },
+      // Assistant endpoints
+      {
+        source: '/assistant/:path*',
+        destination: `${backendUrl}/assistant/:path*`,
+      },
+    ];
+  },
 };
 
 const plugins = [

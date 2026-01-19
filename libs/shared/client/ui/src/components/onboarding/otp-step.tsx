@@ -3,17 +3,42 @@
 import type React from 'react';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '../ui/button';
-import { Shield, ArrowRight, AlertCircle } from 'lucide-react';
+import { Shield, ArrowRight, AlertCircle, ArrowLeft } from 'lucide-react';
 import type { OnboardingData } from './onboarding.interfaces';
 
-interface OtpStepProps {
-  data: OnboardingData;
-  updateData: (updates: Partial<OnboardingData>) => void;
+interface BaseOtpStepProps {
   onNext: () => void;
+  apiBaseUrl?: string;
+  redirectTo?: string;
+  onBack?: () => void;
 }
 
-export function OtpStep({ data, onNext }: OtpStepProps) {
+interface OnboardingOtpStepProps extends BaseOtpStepProps {
+  data: OnboardingData;
+  updateData: (updates: Partial<OnboardingData>) => void;
+  // Simple props not provided
+  email?: never;
+}
+
+interface StandaloneOtpStepProps extends BaseOtpStepProps {
+  email: string;
+  // OnboardingData not provided
+  data?: never;
+  updateData?: never;
+}
+
+type OtpStepProps = OnboardingOtpStepProps | StandaloneOtpStepProps;
+
+export function OtpStep(props: OtpStepProps) {
+  const { apiBaseUrl = '', redirectTo = '/inbox', onBack } = props;
+
+  // Determine email based on props type
+  const isStandalone = 'email' in props && typeof props.email === 'string';
+  const email = isStandalone ? props.email : props.data?.email || '';
+
+  const router = useRouter();
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -80,24 +105,66 @@ export function OtpStep({ data, onNext }: OtpStepProps) {
     setIsLoading(true);
     setError('');
 
-    // Simulate OTP verification (accept any 6 digits for demo)
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/login/otp/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          code,
+        }),
+      });
 
-    // For demo, any 6 digit code works
-    onNext();
-    setIsLoading(false);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Invalid code. Please try again.');
+      }
+
+      // Successfully verified - redirect to inbox
+      router.push(redirectTo);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Verification failed. Please try again.',
+      );
+      setIsLoading(false);
+    }
   };
 
   const handleResend = async () => {
     setResendCooldown(30);
-    // Simulate resend
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      await fetch(`${apiBaseUrl}/auth/login/otp/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+    } catch {
+      // Silently fail - user can try again
+    }
   };
 
   const isComplete = otp.every((digit) => digit !== '');
 
   return (
     <div className="space-y-8">
+      {/* Back button (only shown if onBack is provided) */}
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
+      )}
+
       {/* Header */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-2">
@@ -109,7 +176,7 @@ export function OtpStep({ data, onNext }: OtpStepProps) {
         <p className="text-muted-foreground text-sm leading-relaxed">
           We sent a 6-digit code to
           <br />
-          <span className="text-foreground font-medium">{data.email}</span>
+          <span className="text-foreground font-medium">{email}</span>
         </p>
       </div>
 
@@ -147,10 +214,14 @@ export function OtpStep({ data, onNext }: OtpStepProps) {
           disabled={!isComplete || isLoading}
         >
           {isLoading ? (
-            'Verifying...'
+            isStandalone ? (
+              'Signing in...'
+            ) : (
+              'Verifying...'
+            )
           ) : (
             <>
-              Verify email
+              {isStandalone ? 'Sign in' : 'Verify email'}
               <ArrowRight className="w-4 h-4 ml-2" />
             </>
           )}

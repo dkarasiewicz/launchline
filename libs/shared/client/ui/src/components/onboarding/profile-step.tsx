@@ -3,28 +3,19 @@
 import type React from 'react';
 
 import { useState } from 'react';
+import { gql } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
-import { User, ArrowRight, Building2 } from 'lucide-react';
+import { User, ArrowRight, AlertCircle } from 'lucide-react';
 import type { OnboardingData } from './onboarding.interfaces';
 
-const POSITIONS = [
-  { value: 'ceo', label: 'CEO / Founder' },
-  { value: 'cto', label: 'CTO / Technical Lead' },
-  { value: 'cpo', label: 'CPO / Head of Product' },
-  { value: 'pm', label: 'Product Manager' },
-  { value: 'engineer', label: 'Engineer' },
-  { value: 'designer', label: 'Designer' },
-  { value: 'other', label: 'Other' },
-];
+const REDEEM_INVITE = gql`
+  mutation RedeemInvite($input: RedeemWorkspaceInvitationInput!) {
+    redeemInvite(input: $input)
+  }
+`;
 
 interface ProfileStepProps {
   data: OnboardingData;
@@ -34,23 +25,53 @@ interface ProfileStepProps {
 
 export function ProfileStep({ data, updateData, onNext }: ProfileStepProps) {
   const [name, setName] = useState(data.name);
-  const [orgName, setOrgName] = useState(data.orgName);
-  const [position, setPosition] = useState(data.position);
-  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const [redeemInvite, { loading: isLoading }] = useMutation(REDEEM_INVITE, {
+    onCompleted: () => {
+      updateData({ name });
+      onNext();
+    },
+    onError: (err) => {
+      setError(
+        err.message || 'Failed to complete registration. Please try again.',
+      );
+    },
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setError('');
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (!name.trim()) {
+      setError('Please enter your name');
+      return;
+    }
 
-    updateData({ name, orgName, position });
-    onNext();
-    setIsLoading(false);
+    if (!data.invite?.token) {
+      setError(
+        'Invalid invite. Please go back and enter your invite code again.',
+      );
+      return;
+    }
+
+    // Use email hint from invite, or require user to have set one
+    const email = data.invite.emailHint || data.email;
+    if (!email) {
+      setError('Email is required to complete registration.');
+      return;
+    }
+
+    redeemInvite({
+      variables: {
+        input: {
+          token: data.invite.token,
+          fullName: name.trim(),
+          email,
+        },
+      },
+    });
   };
-
-  const isValid = name.trim() && orgName.trim();
 
   return (
     <div className="space-y-8">
@@ -60,10 +81,10 @@ export function ProfileStep({ data, updateData, onNext }: ProfileStepProps) {
           <User className="w-6 h-6 text-primary" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Tell us about yourself
+          Welcome to {data.orgName || 'Launchline'}
         </h1>
         <p className="text-muted-foreground text-sm leading-relaxed">
-          We&apos;ll personalize your experience based on your role.
+          Let&apos;s get you set up. What should we call you?
         </p>
       </div>
 
@@ -84,50 +105,33 @@ export function ProfileStep({ data, updateData, onNext }: ProfileStepProps) {
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="org-name" className="text-sm text-foreground/80">
-            <span className="flex items-center gap-2">
-              <Building2 className="w-4 h-4" />
-              Organization Name
-            </span>
-          </Label>
-          <Input
-            id="org-name"
-            type="text"
-            placeholder="Acme Inc."
-            value={orgName}
-            onChange={(e) => setOrgName(e.target.value)}
-            className="h-11 bg-secondary/50 border-border/50 text-foreground placeholder:text-muted-foreground/50"
-          />
-        </div>
+        {data.invite?.emailHint && (
+          <div className="space-y-2">
+            <Label className="text-sm text-foreground/80">Email</Label>
+            <div className="h-11 px-3 flex items-center bg-secondary/30 border border-border/50 rounded-md text-foreground/70">
+              {data.invite.emailHint}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This email was set by your workspace admin
+            </p>
+          </div>
+        )}
 
-        <div className="space-y-2">
-          <Label htmlFor="position" className="text-sm text-foreground/80">
-            Your Role{' '}
-            <span className="text-muted-foreground/60">(optional)</span>
-          </Label>
-          <Select value={position} onValueChange={setPosition}>
-            <SelectTrigger className="h-11 bg-secondary/50 border-border/50 text-foreground">
-              <SelectValue placeholder="Select your role" />
-            </SelectTrigger>
-            <SelectContent>
-              {POSITIONS.map((pos) => (
-                <SelectItem key={pos.value} value={pos.value}>
-                  {pos.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {error && (
+          <div className="flex items-center gap-2 text-destructive text-sm">
+            <AlertCircle className="w-4 h-4" />
+            {error}
+          </div>
+        )}
 
         <div className="pt-2">
           <Button
             type="submit"
             className="w-full h-11 bg-foreground text-background hover:bg-foreground/90"
-            disabled={!isValid || isLoading}
+            disabled={!name.trim() || isLoading}
           >
             {isLoading ? (
-              'Saving...'
+              'Setting up...'
             ) : (
               <>
                 Continue

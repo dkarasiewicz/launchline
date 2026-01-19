@@ -3,14 +3,29 @@
 import type React from 'react';
 
 import { useState } from 'react';
+import { gql } from '@apollo/client';
+import { useLazyQuery } from '@apollo/client/react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
-import type { OnboardingData } from './onboarding.interfaces';
+import type {
+  OnboardingData,
+  WorkspaceInviteData,
+} from './onboarding.interfaces';
 
-// Mock valid invite codes for demo
-const VALID_INVITE_CODES = ['LAUNCH2024', 'EARLY-ACCESS', 'BETA-USER', 'DEMO'];
+const GET_INVITE = gql`
+  query GetInvite($input: GetWorkspaceInvitationInput!) {
+    getInvite(input: $input) {
+      token
+      workspaceId
+      workspaceName
+      role
+      emailHint
+      expiresAt
+    }
+  }
+`;
 
 interface InviteCodeStepProps {
   data: OnboardingData;
@@ -25,24 +40,53 @@ export function InviteCodeStep({
 }: InviteCodeStepProps) {
   const [inviteCode, setInviteCode] = useState(data.inviteCode);
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+
+  const [getInvite, { loading: isLoading }] = useLazyQuery<{
+    getInvite: WorkspaceInviteData;
+  }>(GET_INVITE, {
+    fetchPolicy: 'network-only',
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setIsLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    const normalizedCode = inviteCode.trim().toUpperCase();
-    if (VALID_INVITE_CODES.includes(normalizedCode)) {
-      updateData({ inviteCode: normalizedCode });
-      onNext();
-    } else {
-      setError('Invalid invite code. Please check and try again.');
+    const normalizedCode = inviteCode.trim();
+    if (!normalizedCode) {
+      setError('Please enter an invite code');
+      return;
     }
-    setIsLoading(false);
+
+    try {
+      const { data: result, error: queryError } = await getInvite({
+        variables: {
+          input: { token: normalizedCode },
+        },
+      });
+
+      if (queryError) {
+        throw queryError;
+      }
+
+      if (!result?.getInvite) {
+        throw new Error('Invalid invite code. Please check and try again.');
+      }
+
+      const invite = result.getInvite as WorkspaceInviteData;
+      updateData({
+        inviteCode: normalizedCode,
+        invite,
+        email: invite.emailHint || '',
+        orgName: invite.workspaceName || '',
+      });
+      onNext();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Invalid invite code. Please check and try again.';
+      setError(message);
+    }
   };
 
   return (
@@ -103,11 +147,6 @@ export function InviteCodeStep({
           )}
         </Button>
       </form>
-
-      {/* Demo hint */}
-      <p className="text-center text-xs text-muted-foreground/60">
-        Try &quot;DEMO&quot; for testing
-      </p>
     </div>
   );
 }
