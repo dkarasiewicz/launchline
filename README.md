@@ -229,3 +229,16 @@ We believe PM tools should be auditable, extensible, and community-owned.
 
 - Core application, prompts, graphs, and workflows: **Business Source License 1\.1 (BSL 1\.1)** with a *no competing hosted service* restriction. See `LICENSE`.
 - SDKs and client libraries: **MIT**. See each package\-specific `LICENSE`.
+
+---
+
+## Third-Party Services
+
+### Analytics & Notifications
+
+This application currently uses [PostHog](https://posthog.com) for:
+- **Analytics**: User behavior tracking and product analytics
+- **OTP Email Delivery**: One-time password emails for authentication
+
+**Note**: We plan to add support for custom SNS (Simple Notification Service) configurations in the future, allowing you to use your own email delivery service. For now, PostHog handles both analytics and transactional emails.
+
