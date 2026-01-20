@@ -214,7 +214,7 @@ pnpm nx start customer-ui -p 2201
 
 Issues and pull requests are welcome. The community can shape the roadmap — thoughtful contributions are encouraged.
 
-For contribution and collaboration guidelines (licensing, code review, PR expectations, triage), see `.github/COLLABORATION.md`.
+For contribution and collaboration guidelines (licensing, code review, PR expectations, triage), see `./CONTRIBUTING.md`.
 
 By contributing, you agree that:
 

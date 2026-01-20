@@ -33,7 +33,7 @@ Steps to verify the changes:
 - [ ] I ran linting and type checks locally
 - [ ] I updated relevant documentation / README
 - [ ] I added or updated changelog/release notes (if required)
-- [ ] I followed the collaboration guidelines: .github/COLLABORATION.md
+- [ ] I followed the collaboration guidelines: ./CONTRIBUTING.md
 - [ ] I understand my contribution is licensed under BSL 1.1 (core) or MIT (SDKs)
 
 ## Screenshots (if UI)
