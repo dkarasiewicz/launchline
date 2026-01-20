@@ -20,6 +20,7 @@ import {
   AssistantIf,
   useAssistantState,
   useAssistantApi,
+  useAssistantRuntime,
 } from '@assistant-ui/react';
 
 // Custom Runtime Provider
@@ -164,16 +165,16 @@ function InboxLineaThread({
   }, [itemId, api]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Thread Messages - scrollable area */}
-      <ThreadPrimitive.Root className="flex-1 flex flex-col min-h-0">
+      <ThreadPrimitive.Root className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
           {/* Spacer to push messages down */}
           <AssistantIf condition={({ thread }) => !thread.isEmpty}>
             <div className="min-h-8 flex-grow" />
           </AssistantIf>
 
-          <div className="px-6 py-4 pb-24">
+          <div className="px-6 py-4 pb-4">
             <AssistantIf condition={({ thread }) => thread.isEmpty}>
               <InboxThreadWelcome context={itemContext} />
             </AssistantIf>
@@ -187,7 +188,7 @@ function InboxLineaThread({
           </div>
 
           <ThreadPrimitive.ViewportFooter className="sticky bottom-0 pointer-events-none">
-            <div className="flex justify-center pb-28">
+            <div className="flex justify-center pb-4">
               <ThreadPrimitive.ScrollToBottom asChild>
                 <Button
                   variant="outline"
@@ -202,7 +203,7 @@ function InboxLineaThread({
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
 
-      {/* Composer - sticky at bottom */}
+      {/* Composer - always visible at bottom */}
       <div className="flex-shrink-0 p-4 bg-background border-t border-border/50">
         <InboxComposer />
       </div>
@@ -258,7 +259,7 @@ function InboxThreadWelcome({
           autoSend
           asChild
         >
-          <Button variant="outline" size="sm" className="text-xs h-8">
+          <Button variant="outline" size="sm" className="text-xs h-8 bg-transparent">
             What&apos;s the blocker?
           </Button>
         </ThreadPrimitive.Suggestion>
@@ -267,7 +268,7 @@ function InboxThreadWelcome({
           autoSend
           asChild
         >
-          <Button variant="outline" size="sm" className="text-xs h-8">
+          <Button variant="outline" size="sm" className="text-xs h-8 bg-transparent">
             Suggest assignee
           </Button>
         </ThreadPrimitive.Suggestion>
@@ -276,7 +277,7 @@ function InboxThreadWelcome({
           autoSend
           asChild
         >
-          <Button variant="outline" size="sm" className="text-xs h-8">
+          <Button variant="outline" size="sm" className="text-xs h-8 bg-transparent">
             Next steps
           </Button>
         </ThreadPrimitive.Suggestion>
@@ -363,15 +364,15 @@ function InboxComposer() {
       <div className="flex-1 relative">
         <ComposerPrimitive.Input
           placeholder="Ask Linea about this item..."
-          className="w-full bg-muted/50 border border-border rounded-xl h-12 px-4 pr-12 text-sm placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/50 transition-all resize-none"
+          className="w-full bg-muted/50 border border-border rounded-xl h-12 px-4 pr-14 text-sm placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/50 transition-all resize-none"
           autoFocus
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
           <AssistantIf condition={({ thread }) => !thread.isRunning}>
             <ComposerPrimitive.Send asChild>
               <Button
-                size="icon"
-                className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+                size="icon-sm"
+                className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
               >
                 <Send className="w-4 h-4" />
               </Button>
@@ -379,11 +380,7 @@ function InboxComposer() {
           </AssistantIf>
           <AssistantIf condition={({ thread }) => thread.isRunning}>
             <ComposerPrimitive.Cancel asChild>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-              >
+              <Button variant="secondary" size="icon-sm" className="rounded-lg">
                 <SquareIcon className="w-3.5 h-3.5 fill-current" />
               </Button>
             </ComposerPrimitive.Cancel>
@@ -537,6 +534,7 @@ export default function InboxPage() {
 function InboxPageContent() {
   // Get threads from assistant-ui runtime using new API
   const threads = useAssistantState(({ threads }) => threads || []);
+  const runtime = useAssistantRuntime();
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | InboxItemType>('all');
@@ -546,6 +544,7 @@ function InboxPageContent() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [justResolvedId, setJustResolvedId] = useState<string | null>(null);
   const [pendingResolveId, setPendingResolveId] = useState<string | null>(null);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
 
   // Map threads to inbox items format
   const items = useMemo(() => {
@@ -553,7 +552,9 @@ function InboxPageContent() {
       id: thread.threadId,
       externalId: thread.threadId,
       type: (thread.metadata?.inboxItemType || 'update') as InboxItemType,
-      status: thread.metadata?.inboxStatus || 'new',
+      status: resolvedIds.has(thread.threadId)
+        ? 'actioned'
+        : thread.metadata?.inboxStatus || 'new',
       priority: thread.metadata?.inboxPriority || 'medium',
       title: thread.title || 'Untitled',
       summary: thread.metadata?.summary || '',
@@ -566,16 +567,46 @@ function InboxPageContent() {
       messages: [],
       executionLogs: [],
     }));
-  }, [threads]);
+  }, [threads, resolvedIds]);
 
-  // Resolve function using runtime
-  const resolveItem = useCallback((itemId: string) => {
-    // TODO: Implement delete via GraphQL mutation (deleteThread)
-    // This will call the backend to archive/delete the thread
-    console.log('Resolving item:', itemId);
-    // Note: runtime.threadList doesn't have a delete method
-    // We need to implement this via GraphQL mutation
-  }, []);
+  // Resolve function - archives the thread via GraphQL
+  const resolveItem = useCallback(
+    async (itemId: string) => {
+      try {
+        // Call archive mutation via GraphQL
+        const API_BASE =
+          process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        const response = await fetch(`${API_BASE}/graphql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            query: `mutation ArchiveThread($threadId: String!) { archiveThread(threadId: $threadId) }`,
+            variables: { threadId: itemId },
+          }),
+        });
+
+        const result = await response.json();
+        if (result.errors) {
+          console.error('Failed to archive thread:', result.errors);
+          return;
+        }
+
+        // Mark as resolved locally for immediate UI feedback
+        setResolvedIds((prev) => new Set([...prev, itemId]));
+
+        // Optionally refresh threads list
+        if (runtime?.threads) {
+          // The runtime will automatically sync on next poll
+        }
+      } catch (error) {
+        console.error('Failed to resolve item:', error);
+      }
+    },
+    [runtime],
+  );
 
   // Filter and sort items
   const filteredItems = useMemo(() => {
