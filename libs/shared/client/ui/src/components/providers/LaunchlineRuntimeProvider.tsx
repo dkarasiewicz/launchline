@@ -1,385 +1,147 @@
 'use client';
 
-import { ReactNode, useState, useCallback, useMemo, useRef } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import {
   AssistantRuntimeProvider,
-  useExternalStoreRuntime,
-  type ThreadMessageLike,
-  type AppendMessage,
+  unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
 } from '@assistant-ui/react';
 import {
-  createThread,
-  getMessages,
-  streamMessage,
-  addToolResult,
-  ThreadMessage,
-  MessageContent,
-  TextContent,
-  ToolCallContent,
-} from '../../lib/launchlineApi';
+  type LangChainMessage,
+  LangGraphMessagesEvent,
+} from '@assistant-ui/react-langgraph';
+import { createThreadListAdapter } from '../../lib/assistant/thread-adapter';
+import { BytesLineDecoder, SSEDecoder } from './sse';
+import { useLangGraphRuntime } from './langraph-runtime';
 
-// ============================================================================
-// Internal Message Type with mutable content
-// ============================================================================
-
-interface InternalMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: Array<{
-    type: 'text' | 'tool-call';
-    text?: string;
-    toolCallId?: string;
-    toolName?: string;
-    args?: Record<string, unknown>;
-    result?: unknown;
-  }>;
-  createdAt: Date;
-}
-
-// ============================================================================
-// Message Conversion
-// ============================================================================
-
-function convertToInternalMessage(msg: ThreadMessage): InternalMessage {
-  const content: InternalMessage['content'] = [];
-
-  for (const part of msg.content) {
-    switch (part.type) {
-      case 'text':
-        content.push({ type: 'text', text: (part as TextContent).text });
-        break;
-      case 'tool-call': {
-        const toolCall = part as ToolCallContent;
-        content.push({
-          type: 'tool-call',
-          toolCallId: toolCall.toolCallId,
-          toolName: toolCall.toolName,
-          args: toolCall.args,
-          result: toolCall.result,
-        });
-        break;
-      }
-    }
-  }
-
-  return {
-    id: msg.id,
-    role:
-      msg.role === 'tool'
-        ? 'assistant'
-        : (msg.role as 'user' | 'assistant' | 'system'),
-    content,
-    createdAt: new Date(msg.createdAt),
-  };
-}
-
-function convertToThreadMessageLike(msg: InternalMessage): ThreadMessageLike {
-  return {
-    id: msg.id,
-    role: msg.role,
-    content: msg.content.map((c) => {
-      if (c.type === 'text') {
-        return { type: 'text' as const, text: c.text || '' };
-      }
-      return {
-        type: 'tool-call' as const,
-        toolCallId: c.toolCallId || '',
-        toolName: c.toolName || '',
-        args: c.args as Record<string, unknown> | undefined,
-        result: c.result,
-      };
-    }) as ThreadMessageLike['content'],
-    createdAt: msg.createdAt,
-  };
-}
-
-function convertFromAppendMessage(msg: AppendMessage): MessageContent[] {
-  const content: MessageContent[] = [];
-
-  for (const part of msg.content) {
-    if (part.type === 'text') {
-      content.push({ type: 'text', text: part.text });
-    }
-  }
-
-  return content;
-}
-
-// ============================================================================
-// Runtime Provider
-// ============================================================================
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
 interface LaunchlineRuntimeProviderProps {
   children: ReactNode;
-  threadId?: string;
-  context?: Record<string, unknown>;
-  onThreadCreated?: (threadId: string) => void;
+}
+
+/**
+ * Stream messages to a thread using SSE endpoint
+ */
+async function* streamMessages({
+  threadId,
+  messages,
+}: {
+  threadId: string;
+  messages: LangChainMessage[];
+}): AsyncGenerator<LangGraphMessagesEvent<LangChainMessage>> {
+  const url = `${API_BASE}/assistant/stream?threadId=${threadId.trim()}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ input: { messages } }),
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to stream messages: ${response.statusText}`);
+  }
+
+  const stream = response.body
+    .pipeThrough(BytesLineDecoder())
+    .pipeThrough(SSEDecoder());
+
+  const reader = stream.getReader();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      yield value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Get thread state from the backend
+ */
+async function getThreadState(threadId: string) {
+  const response = await fetch(
+    `${API_BASE}/assistant/thread/${threadId}/state?threadId=${threadId}`,
+    {
+      method: 'GET',
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to get thread state: ${response.statusText}`);
+  }
+
+  return response.json();
 }
 
 export function LaunchlineRuntimeProvider({
   children,
-  threadId: initialThreadId,
-  context,
-  onThreadCreated,
 }: LaunchlineRuntimeProviderProps) {
-  const [internalMessages, setInternalMessages] = useState<InternalMessage[]>(
-    [],
-  );
-  const [isRunning, setIsRunning] = useState(false);
-  const [currentThreadId, setCurrentThreadId] = useState<string | null>(
-    initialThreadId || null,
-  );
-  const currentAssistantIdRef = useRef<string | null>(null);
+  const threadListAdapter = useMemo(() => createThreadListAdapter(), []);
 
-  // Convert internal messages to ThreadMessageLike for the runtime
-  const messages = useMemo(
-    () => internalMessages.map(convertToThreadMessageLike),
-    [internalMessages],
-  );
+  const runtime = useRemoteThreadListRuntime({
+    runtimeHook: () =>
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      useLangGraphRuntime({
+        stream: async function* (messages, { initialize }) {
+          const data = await initialize();
+          const { remoteId } = data;
 
-  // Load messages when thread changes
-  const loadMessages = useCallback(async (threadId: string) => {
-    try {
-      const { messages: threadMessages } = await getMessages(threadId);
-      setInternalMessages(threadMessages.map(convertToInternalMessage));
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-    }
-  }, []);
+          if (!remoteId) throw new Error('Thread not initialized');
 
-  // Initialize thread if needed
-  const ensureThread = useCallback(async (): Promise<string> => {
-    if (currentThreadId) return currentThreadId;
+          const generator = streamMessages({
+            threadId: remoteId,
+            messages,
+          });
 
-    const thread = await createThread();
-    setCurrentThreadId(thread.id);
-    onThreadCreated?.(thread.id);
-    return thread.id;
-  }, [currentThreadId, onThreadCreated]);
+          yield* generator;
+        },
+        load: async (externalId) => {
+          try {
+            const state = await getThreadState(externalId);
 
-  // Handle new message
-  const onNew = useCallback(
-    async (message: AppendMessage) => {
-      const threadId = await ensureThread();
-      const content = convertFromAppendMessage(message);
-
-      // Generate IDs
-      const userMsgId = `temp-user-${Date.now()}`;
-      const assistantMsgId = `temp-assistant-${Date.now()}`;
-      currentAssistantIdRef.current = assistantMsgId;
-
-      // Optimistically add user message
-      const userMsg: InternalMessage = {
-        id: userMsgId,
-        role: 'user',
-        content: content.map((c) => ({
-          type: c.type as 'text',
-          text: (c as TextContent).text,
-        })),
-        createdAt: new Date(),
-      };
-
-      // Optimistic assistant message
-      const assistantMsg: InternalMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: [{ type: 'text', text: '' }],
-        createdAt: new Date(),
-      };
-
-      setInternalMessages((prev) => [...prev, userMsg, assistantMsg]);
-      setIsRunning(true);
-
-      try {
-        await streamMessage(threadId, content, context, {
-          onUserMessage: (id) => {
-            setInternalMessages((prev) =>
-              prev.map((m) => (m.id === userMsgId ? { ...m, id } : m)),
-            );
-          },
-          onAssistantStart: (id) => {
-            currentAssistantIdRef.current = id;
-            setInternalMessages((prev) =>
-              prev.map((m) => (m.id === assistantMsgId ? { ...m, id } : m)),
-            );
-          },
-          onTextDelta: ({ id, text }) => {
-            setInternalMessages((prev) =>
-              prev.map((m) => {
-                if (
-                  m.id === id ||
-                  m.id === assistantMsgId ||
-                  m.id === currentAssistantIdRef.current
-                ) {
-                  // Update existing text content or add it
-                  const newContent = [...m.content];
-                  const textIndex = newContent.findIndex(
-                    (c) => c.type === 'text',
-                  );
-                  if (textIndex >= 0) {
-                    newContent[textIndex] = { ...newContent[textIndex], text };
-                  } else {
-                    newContent.unshift({ type: 'text', text });
+            return {
+              messages: (
+                (
+                  state.values as {
+                    messages?: {
+                      id: string[];
+                      kwargs: {
+                        content: string;
+                        id: string;
+                      };
+                    }[];
                   }
-                  return { ...m, id, content: newContent };
-                }
-                return m;
+                ).messages ?? []
+              ).map((msg): LangChainMessage => {
+                const isHumanMsg = msg.id.includes('HumanMessage');
+                const isAIMessage = msg.id.includes('AIMessageChunk');
+
+                return {
+                  id: msg.kwargs.id,
+                  type: isHumanMsg ? 'human' : isAIMessage ? 'ai' : 'system',
+                  content: msg.kwargs.content,
+                };
               }),
-            );
-          },
-          onToolCall: ({ toolCallId, toolName, args }) => {
-            setInternalMessages((prev) =>
-              prev.map((m) => {
-                if (m.id === currentAssistantIdRef.current) {
-                  const hasToolCall = m.content.some(
-                    (c) =>
-                      c.type === 'tool-call' && c.toolCallId === toolCallId,
-                  );
-                  if (!hasToolCall) {
-                    return {
-                      ...m,
-                      content: [
-                        ...m.content,
-                        { type: 'tool-call', toolCallId, toolName, args },
-                      ],
-                    };
-                  }
-                }
-                return m;
-              }),
-            );
-          },
-          onToolResult: ({ toolCallId, result }) => {
-            setInternalMessages((prev) =>
-              prev.map((m) => {
-                if (m.role === 'assistant') {
-                  return {
-                    ...m,
-                    content: m.content.map((c) =>
-                      c.type === 'tool-call' && c.toolCallId === toolCallId
-                        ? { ...c, result }
-                        : c,
-                    ),
-                  };
-                }
-                return m;
-              }),
-            );
-          },
-          onDone: () => {
-            setIsRunning(false);
-            currentAssistantIdRef.current = null;
-          },
-          onError: (error) => {
-            console.error('Stream error:', error);
-            setIsRunning(false);
-            currentAssistantIdRef.current = null;
-          },
-        });
-      } catch (error) {
-        console.error('Failed to send message:', error);
-        setIsRunning(false);
-        currentAssistantIdRef.current = null;
-      }
-    },
-    [ensureThread, context],
-  );
+              interrupts: state.tasks?.[0]?.interrupts ?? [],
+            };
+          } catch (error) {
+            console.error('[LaunchlineRuntime] Failed to load thread:', error);
 
-  // Handle tool result submission (for human-in-the-loop)
-  const onAddToolResult = useCallback(
-    async ({
-      messageId,
-      toolCallId,
-      result,
-    }: {
-      messageId: string;
-      toolCallId: string;
-      result: unknown;
-    }) => {
-      if (!currentThreadId) return;
-
-      await addToolResult(currentThreadId, messageId, toolCallId, result);
-
-      setInternalMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                content: m.content.map((c) =>
-                  c.type === 'tool-call' && c.toolCallId === toolCallId
-                    ? { ...c, result }
-                    : c,
-                ),
-              }
-            : m,
-        ),
-      );
-    },
-    [currentThreadId],
-  );
-
-  // Handle reload/regenerate
-  const onReload = useCallback(
-    async (parentId: string | null) => {
-      if (!currentThreadId) return;
-
-      const parentIndex = parentId
-        ? internalMessages.findIndex((m) => m.id === parentId)
-        : -1;
-
-      const previousMessages =
-        parentIndex >= 0 ? internalMessages.slice(0, parentIndex + 1) : [];
-
-      setInternalMessages(previousMessages);
-    },
-    [currentThreadId, internalMessages],
-  );
-
-  // Handle cancel
-  const onCancel = useCallback(async () => {
-    setIsRunning(false);
-    currentAssistantIdRef.current = null;
-  }, []);
-
-  // Set messages handler for runtime
-  const setMessagesHandler = useCallback(
-    (newMessages: readonly ThreadMessageLike[]) => {
-      // Convert back to internal format
-      setInternalMessages(
-        newMessages.map((m) => ({
-          id: m.id || `msg-${Date.now()}`,
-          role: m.role as 'user' | 'assistant' | 'system',
-          content:
-            typeof m.content === 'string'
-              ? [{ type: 'text' as const, text: m.content }]
-              : (m.content as any[]).map((c: any) => {
-                  if (c.type === 'text') {
-                    return { type: 'text' as const, text: c.text };
-                  }
-                  return {
-                    type: 'tool-call' as const,
-                    toolCallId: c.toolCallId,
-                    toolName: c.toolName,
-                    args: c.args,
-                    result: c.result,
-                  };
-                }),
-          createdAt: m.createdAt || new Date(),
-        })),
-      );
-    },
-    [],
-  );
-
-  const runtime = useExternalStoreRuntime({
-    messages,
-    setMessages: setMessagesHandler,
-    isRunning,
-    onNew,
-    onReload,
-    onCancel,
-    onAddToolResult,
-    convertMessage: (msg) => msg, // Already in correct format
+            return {
+              messages: [],
+              interrupts: [],
+            };
+          }
+        },
+      }),
+    adapter: threadListAdapter,
   });
 
   return (
@@ -389,28 +151,4 @@ export function LaunchlineRuntimeProvider({
   );
 }
 
-// ============================================================================
-// Hook for external thread management
-// ============================================================================
-
-export function useLaunchlineThread() {
-  const [threadId, setThreadId] = useState<string | null>(null);
-
-  const initThread = useCallback(async () => {
-    const thread = await createThread();
-    setThreadId(thread.id);
-    return thread;
-  }, []);
-
-  const loadThread = useCallback(async (id: string) => {
-    setThreadId(id);
-    return getMessages(id);
-  }, []);
-
-  return {
-    threadId,
-    setThreadId,
-    initThread,
-    loadThread,
-  };
-}
+export type { LangChainMessage } from '@assistant-ui/react-langgraph';

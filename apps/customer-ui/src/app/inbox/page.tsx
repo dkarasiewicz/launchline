@@ -6,11 +6,10 @@ import { LogoIcon } from '@launchline/ui/components/logo';
 import { Button } from '@launchline/ui/components/ui/button';
 import { Badge } from '@launchline/ui/components/ui/badge';
 import { cn } from '@launchline/ui/lib/utils';
-import {
-  useInbox,
-  type InboxItemType,
-  type LinkedContext,
-} from '@launchline/ui/lib/inbox-store';
+
+// Define inbox item types locally (these will be stored as thread metadata)
+export type InboxItemType = 'blocker' | 'drift' | 'update' | 'coverage';
+export type LinkedContext = any; // TODO: Import from a shared types file
 
 // Assistant-UI imports
 import {
@@ -19,10 +18,12 @@ import {
   MessagePrimitive,
   ActionBarPrimitive,
   AssistantIf,
+  useAssistantState,
+  useAssistantApi,
 } from '@assistant-ui/react';
 
 // Custom Runtime Provider
-import { LaunchlineRuntimeProvider } from '@launchline/ui/components/providers/LaunchlineRuntimeProvider';
+import { LaunchlineRuntimeProvider } from '@launchline/ui';
 
 // Tool UIs
 import {
@@ -138,7 +139,7 @@ function TimeAgo({ date }: { date: Date }) {
 /**
  * InboxLineaThread - Assistant-UI powered chat for inbox items
  *
- * Uses LaunchlineRuntimeProvider for SSE streaming with NestJS backend.
+ * Uses the selected thread from the runtime (each inbox item is a thread).
  */
 function InboxLineaThread({
   itemId,
@@ -153,92 +154,57 @@ function InboxLineaThread({
     linkedContexts?: LinkedContext[];
   };
 }) {
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const api = useAssistantApi();
 
-  // Build context for the agent
-  const context = useMemo(
-    () => ({
-      inboxItemId: itemId,
-      title: itemContext.title,
-      summary: itemContext.summary,
-      type: itemContext.type,
-      priority: itemContext.priority,
-    }),
-    [itemId, itemContext],
-  );
-
-  // Load or create thread for this inbox item
+  // Switch to the thread for this inbox item
   useEffect(() => {
-    const threadMap = JSON.parse(
-      localStorage.getItem('inbox-thread-map') || '{}',
-    );
-    const existingThreadId = threadMap[itemId];
-    if (existingThreadId) {
-      setThreadId(existingThreadId);
+    if (itemId) {
+      api.threads().switchToThread(itemId);
     }
-  }, [itemId]);
-
-  const handleThreadCreated = useCallback(
-    (newThreadId: string) => {
-      const threadMap = JSON.parse(
-        localStorage.getItem('inbox-thread-map') || '{}',
-      );
-      threadMap[itemId] = newThreadId;
-      localStorage.setItem('inbox-thread-map', JSON.stringify(threadMap));
-      setThreadId(newThreadId);
-    },
-    [itemId],
-  );
+  }, [itemId, api]);
 
   return (
-    <LaunchlineRuntimeProvider
-      key={`${itemId}-${threadId || 'new'}`}
-      threadId={threadId || undefined}
-      context={context}
-      onThreadCreated={handleThreadCreated}
-    >
-      <div className="flex flex-col h-full">
-        {/* Thread Messages - scrollable area */}
-        <ThreadPrimitive.Root className="flex-1 flex flex-col min-h-0">
-          <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
-            {/* Spacer to push messages down */}
-            <AssistantIf condition={({ thread }) => !thread.isEmpty}>
-              <div className="min-h-8 flex-grow" />
+    <div className="flex flex-col h-full">
+      {/* Thread Messages - scrollable area */}
+      <ThreadPrimitive.Root className="flex-1 flex flex-col min-h-0">
+        <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
+          {/* Spacer to push messages down */}
+          <AssistantIf condition={({ thread }) => !thread.isEmpty}>
+            <div className="min-h-8 flex-grow" />
+          </AssistantIf>
+
+          <div className="px-6 py-4 pb-24">
+            <AssistantIf condition={({ thread }) => thread.isEmpty}>
+              <InboxThreadWelcome context={itemContext} />
             </AssistantIf>
 
-            <div className="px-6 py-4 pb-24">
-              <AssistantIf condition={({ thread }) => thread.isEmpty}>
-                <InboxThreadWelcome context={itemContext} />
-              </AssistantIf>
+            <ThreadPrimitive.Messages
+              components={{
+                UserMessage: InboxUserMessage,
+                AssistantMessage: InboxAssistantMessage,
+              }}
+            />
+          </div>
 
-              <ThreadPrimitive.Messages
-                components={{
-                  UserMessage: InboxUserMessage,
-                  AssistantMessage: InboxAssistantMessage,
-                }}
-              />
+          <ThreadPrimitive.ViewportFooter className="sticky bottom-0 pointer-events-none">
+            <div className="flex justify-center pb-28">
+              <ThreadPrimitive.ScrollToBottom asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="rounded-full shadow-md bg-background border-border/50 disabled:invisible pointer-events-auto"
+                >
+                  <ArrowDownIcon className="h-4 w-4" />
+                </Button>
+              </ThreadPrimitive.ScrollToBottom>
             </div>
+          </ThreadPrimitive.ViewportFooter>
+        </ThreadPrimitive.Viewport>
+      </ThreadPrimitive.Root>
 
-            <ThreadPrimitive.ViewportFooter className="sticky bottom-0 pointer-events-none">
-              <div className="flex justify-center pb-28">
-                <ThreadPrimitive.ScrollToBottom asChild>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="rounded-full shadow-md bg-background border-border/50 disabled:invisible pointer-events-auto"
-                  >
-                    <ArrowDownIcon className="h-4 w-4" />
-                  </Button>
-                </ThreadPrimitive.ScrollToBottom>
-              </div>
-            </ThreadPrimitive.ViewportFooter>
-          </ThreadPrimitive.Viewport>
-        </ThreadPrimitive.Root>
-
-        {/* Composer - sticky at bottom */}
-        <div className="flex-shrink-0 p-4 bg-background border-t border-border/50">
-          <InboxComposer />
-        </div>
+      {/* Composer - sticky at bottom */}
+      <div className="flex-shrink-0 p-4 bg-background border-t border-border/50">
+        <InboxComposer />
       </div>
 
       {/* Register Tool UIs */}
@@ -250,7 +216,7 @@ function InboxLineaThread({
       <SendSlackMessageToolUI />
       {/* DeepAgents built-in write_todos for task planning */}
       <WriteTodosToolUI />
-    </LaunchlineRuntimeProvider>
+    </div>
   );
 }
 
@@ -558,8 +524,19 @@ function KeyboardHelp({
   );
 }
 
+// Main page component wrapped with runtime provider
 export default function InboxPage() {
-  const { items, resolveItem } = useInbox();
+  return (
+    <LaunchlineRuntimeProvider>
+      <InboxPageContent />
+    </LaunchlineRuntimeProvider>
+  );
+}
+
+// Inner component that uses assistant-ui hooks
+function InboxPageContent() {
+  // Get threads from assistant-ui runtime using new API
+  const threads = useAssistantState(({ threads }) => threads || []);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | InboxItemType>('all');
@@ -569,6 +546,36 @@ export default function InboxPage() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [justResolvedId, setJustResolvedId] = useState<string | null>(null);
   const [pendingResolveId, setPendingResolveId] = useState<string | null>(null);
+
+  // Map threads to inbox items format
+  const items = useMemo(() => {
+    return threads.threadItems.map((thread: any) => ({
+      id: thread.threadId,
+      externalId: thread.threadId,
+      type: (thread.metadata?.inboxItemType || 'update') as InboxItemType,
+      status: thread.metadata?.inboxStatus || 'new',
+      priority: thread.metadata?.inboxPriority || 'medium',
+      title: thread.title || 'Untitled',
+      summary: thread.metadata?.summary || '',
+      timestamp: thread.metadata?.createdAt
+        ? new Date(thread.metadata.createdAt)
+        : new Date(),
+      projectId: thread.metadata?.projectId || '',
+      featureId: thread.metadata?.featureId,
+      linkedContexts: thread.metadata?.linkedContexts || [],
+      messages: [],
+      executionLogs: [],
+    }));
+  }, [threads]);
+
+  // Resolve function using runtime
+  const resolveItem = useCallback((itemId: string) => {
+    // TODO: Implement delete via GraphQL mutation (deleteThread)
+    // This will call the backend to archive/delete the thread
+    console.log('Resolving item:', itemId);
+    // Note: runtime.threadList doesn't have a delete method
+    // We need to implement this via GraphQL mutation
+  }, []);
 
   // Filter and sort items
   const filteredItems = useMemo(() => {
@@ -692,20 +699,22 @@ export default function InboxPage() {
       }
 
       switch (e.key.toLowerCase()) {
-        case 'j':
+        case 'j': {
           e.preventDefault();
           const jIdx = activeItems.findIndex((i) => i.id === selectedItemId);
           if (jIdx < activeItems.length - 1) {
             setSelectedItemId(activeItems[jIdx + 1].id);
           }
           break;
-        case 'k':
+        }
+        case 'k': {
           e.preventDefault();
           const kIdx = activeItems.findIndex((i) => i.id === selectedItemId);
           if (kIdx > 0) {
             setSelectedItemId(activeItems[kIdx - 1].id);
           }
           break;
+        }
         case 'e':
           e.preventDefault();
           handleResolve();

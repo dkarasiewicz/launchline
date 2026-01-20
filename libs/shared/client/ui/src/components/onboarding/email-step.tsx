@@ -9,14 +9,41 @@ import { Label } from '../ui/label';
 import { Mail, ArrowRight, AlertCircle } from 'lucide-react';
 import { OnboardingData } from './onboarding.interfaces';
 
-interface EmailStepProps {
-  data: OnboardingData;
-  updateData: (updates: Partial<OnboardingData>) => void;
+interface BaseEmailStepProps {
+  apiBaseUrl?: string;
   onNext: () => void;
 }
 
-export function EmailStep({ data, updateData, onNext }: EmailStepProps) {
-  const [email, setEmail] = useState(data.email);
+interface OnboardingEmailStepProps extends BaseEmailStepProps {
+  data: OnboardingData;
+  updateData: (updates: Partial<OnboardingData>) => void;
+  // Simple props not provided
+  initialEmail?: never;
+  onEmailChange?: never;
+}
+
+interface StandaloneEmailStepProps extends BaseEmailStepProps {
+  initialEmail: string;
+  onEmailChange: (email: string) => void;
+  // OnboardingData not provided
+  data?: never;
+  updateData?: never;
+}
+
+type EmailStepProps = OnboardingEmailStepProps | StandaloneEmailStepProps;
+
+export function EmailStep(props: EmailStepProps) {
+  const { apiBaseUrl = '', onNext } = props;
+
+  // Determine initial email and whether we're in standalone mode
+  const isStandalone =
+    'initialEmail' in props && props.initialEmail !== undefined;
+  const initialEmailValue = isStandalone
+    ? props.initialEmail
+    : props.data?.email || props.data?.invite?.emailHint || '';
+  const emailHint = !isStandalone ? props.data?.invite?.emailHint : undefined;
+
+  const [email, setEmail] = useState(initialEmailValue);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -35,12 +62,36 @@ export function EmailStep({ data, updateData, onNext }: EmailStepProps) {
 
     setIsLoading(true);
 
-    // Simulate sending OTP
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/login/otp/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
 
-    updateData({ email });
-    onNext();
-    setIsLoading(false);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to send verification code');
+      }
+
+      // Update parent state
+      if (isStandalone) {
+        props.onEmailChange(email);
+      } else {
+        props.updateData({ email });
+      }
+      onNext();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to send verification code. Please try again.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,10 +102,12 @@ export function EmailStep({ data, updateData, onNext }: EmailStepProps) {
           <Mail className="w-6 h-6 text-primary" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Enter your email
+          {isStandalone ? 'Welcome back' : 'Verify your email'}
         </h1>
         <p className="text-muted-foreground text-sm leading-relaxed">
-          We&apos;ll send you a one-time code to verify your email.
+          {isStandalone
+            ? 'Enter your email to sign in to your account.'
+            : "We'll send you a one-time code to verify your email."}
         </p>
       </div>
 
@@ -72,7 +125,13 @@ export function EmailStep({ data, updateData, onNext }: EmailStepProps) {
             onChange={(e) => setEmail(e.target.value)}
             className="h-11 bg-secondary/50 border-border/50 text-foreground placeholder:text-muted-foreground/50"
             autoFocus
+            readOnly={!!emailHint}
           />
+          {emailHint && (
+            <p className="text-xs text-muted-foreground">
+              This email was set by your workspace admin
+            </p>
+          )}
           {error && (
             <div className="flex items-center gap-2 text-destructive text-sm mt-2">
               <AlertCircle className="w-4 h-4" />
@@ -90,16 +149,18 @@ export function EmailStep({ data, updateData, onNext }: EmailStepProps) {
             'Sending code...'
           ) : (
             <>
-              Send verification code
+              {isStandalone ? 'Continue with email' : 'Send verification code'}
               <ArrowRight className="w-4 h-4 ml-2" />
             </>
           )}
         </Button>
       </form>
 
-      {/* Privacy note */}
-      <p className="text-center text-xs text-muted-foreground/60">
-        We&apos;ll never share your email with third parties.
+      {/* Footer text */}
+      <p className="text-center text-xs text-muted-foreground">
+        {isStandalone
+          ? "We'll send you a one-time code to verify your identity."
+          : "We'll only use your email for authentication and important updates."}
       </p>
     </div>
   );

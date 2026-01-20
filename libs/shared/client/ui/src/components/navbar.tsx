@@ -52,7 +52,7 @@ export function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             <GitHubStars repo="dkarasiewicz/launchline" />
             <ThemeToggle />
-            <Link href="/onboarding">
+            <Link href="/login">
               <Button
                 variant="ghost"
                 size="sm"
@@ -115,7 +115,7 @@ export function Navbar() {
                   <span className="text-sm text-muted-foreground">GitHub</span>
                   <GitHubStars repo="dkarasiewicz/launchline" />
                 </div>
-                <Link href="/onboarding">
+                <Link href="/login">
                   <Button
                     variant="ghost"
                     size="sm"

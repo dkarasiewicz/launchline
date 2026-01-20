@@ -1,35 +1,17 @@
 import type React from 'react';
 import type { Metadata, Viewport } from 'next';
 
-// import './globals.css';
 import './global.css';
 import { ThemeProvider } from '@launchline/ui/components/theme-provider';
 
-import { Geist, Geist_Mono, Source_Serif_4 } from 'next/font/google';
+import { ApolloClientProvider, PostHogProvider } from '@launchline/ui';
 
 // Initialize fonts
-const _geist = Geist({
-  subsets: ['latin'],
-  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900'],
-});
-const _geistMono = Geist_Mono({
-  subsets: ['latin'],
-  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900'],
-});
-const _sourceSerif_4 = Source_Serif_4({
-  subsets: ['latin'],
-  weight: ['200', '300', '400', '500', '600', '700', '800', '900'],
-});
-
-const _sourceSerif4 = Source_Serif_4({
-  subsets: ['latin'],
-  weight: ['200', '300', '400', '500', '600', '700', '800', '900'],
-});
 
 export const metadata: Metadata = {
-  title: 'Launchline — Turn ideas into real products, instantly',
+  title: 'Launchline — The execution inbox for product managers',
   description:
-    'Launchline transforms your ideas into PRDs, plans, Linear tickets, MVP previews, and verified implementation. The AI Product Partner for PMs, founders, and CEOs.',
+    'Launchline watches Linear, Slack, and GitHub — surfaces the things you must act on — so you can unblock teams and deliver with confidence.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -51,17 +33,23 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const gqlApiUrl = `${process.env.NEXT_PUBLIC_API_URL}/graphql`;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        <ApolloClientProvider gqlApiUrl={gqlApiUrl}>
+          <PostHogProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="dark"
+              enableSystem
+              disableTransitionOnChange
+            >
+              {children}
+            </ThemeProvider>
+          </PostHogProvider>
+        </ApolloClientProvider>
       </body>
     </html>
   );

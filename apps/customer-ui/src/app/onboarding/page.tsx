@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePostHog } from 'posthog-js/react';
 import { InviteCodeStep } from '@launchline/ui/components/onboarding/invite-code-step';
 import { EmailStep } from '@launchline/ui/components/onboarding/email-step';
 import { OtpStep } from '@launchline/ui/components/onboarding/otp-step';
@@ -13,7 +14,13 @@ import {
   OnboardingStep,
 } from '@launchline/ui/components/onboarding/onboarding.interfaces';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 export default function OnboardingPage() {
+  const posthog = usePostHog();
+  const showIntegrations =
+    posthog?.isFeatureEnabled('onboarding-integrations') ?? false;
+
   const [step, setStep] = useState<OnboardingStep>('invite-code');
   const [data, setData] = useState<OnboardingData>({
     inviteCode: '',
@@ -31,15 +38,19 @@ export default function OnboardingPage() {
   };
 
   const nextStep = () => {
-    const steps: OnboardingStep[] = [
+    // Flow: invite-code -> profile -> email -> otp -> (integrations if flag) -> complete
+    const baseSteps: OnboardingStep[] = [
       'invite-code',
+      'profile',
       'email',
       'otp',
-      'profile',
-      'integrations',
-      'suggestions',
-      'complete',
     ];
+
+    // Add integrations steps if feature flag is enabled
+    const steps: OnboardingStep[] = showIntegrations
+      ? [...baseSteps, 'integrations', 'suggestions', 'complete']
+      : [...baseSteps, 'complete'];
+
     const currentIndex = steps.indexOf(step);
     if (currentIndex < steps.length - 1) {
       setStep(steps[currentIndex + 1]);
@@ -60,16 +71,27 @@ export default function OnboardingPage() {
             onNext={nextStep}
           />
         )}
-        {step === 'email' && (
-          <EmailStep data={data} updateData={updateData} onNext={nextStep} />
-        )}
-        {step === 'otp' && (
-          <OtpStep data={data} updateData={updateData} onNext={nextStep} />
-        )}
         {step === 'profile' && (
           <ProfileStep data={data} updateData={updateData} onNext={nextStep} />
         )}
-        {step === 'integrations' && (
+        {step === 'email' && (
+          <EmailStep
+            data={data}
+            updateData={updateData}
+            onNext={nextStep}
+            apiBaseUrl={API_BASE_URL}
+          />
+        )}
+        {step === 'otp' && (
+          <OtpStep
+            data={data}
+            updateData={updateData}
+            onNext={nextStep}
+            apiBaseUrl={API_BASE_URL}
+            redirectTo="/inbox"
+          />
+        )}
+        {showIntegrations && step === 'integrations' && (
           <IntegrationsStep
             data={data}
             updateData={updateData}
@@ -77,7 +99,7 @@ export default function OnboardingPage() {
             goToStep={goToStep}
           />
         )}
-        {step === 'suggestions' && (
+        {showIntegrations && step === 'suggestions' && (
           <IntegrationSuggestionsStep
             data={data}
             updateData={updateData}
