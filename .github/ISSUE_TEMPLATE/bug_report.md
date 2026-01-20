@@ -1,6 +1,11 @@
-<!-- Please fill out this template when reporting a bug. -->
+---
+name: Bug report
+about: Create a report to help us improve
+title: ''
+labels: ''
+assignees: ''
 
-**Title**: <!-- e.g. Unexpected error when saving draft -->
+---
 
 ## Describe the bug
 A clear and concise description of what the bug is.
@@ -24,13 +29,6 @@ What actually happened (include error messages / stack traces).
 - Launchline version: <!-- e.g. v0.1.0 or commit hash -->
 - Deployment: <!-- Self-hosted or cloud-hosted -->
 - Node / Browser / OS: <!-- e.g. Node 18, Chrome 115, macOS 14 -->
-- Database (if relevant): <!-- e.g. Postgres 15 -->
 
 ## Additional context
 Add any other context about the problem here (screenshots, network tab, request payloads).
-
----
-
-Launchline is **open-core** and self-hostable. For contribution & collaboration guidelines (licensing, PRs, triage, reviews), see .github/COLLABORATION.md.
-
-<!-- Labels: bug -->

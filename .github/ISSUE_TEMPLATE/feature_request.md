@@ -1,4 +1,11 @@
-<!-- Use this template to suggest a new feature or improvement. -->
+---
+name: Feature request
+about: Suggest an idea for this project
+title: ''
+labels: Feature
+assignees: ''
+
+---
 
 ## Summary
 A short summary of the feature or improvement.
@@ -21,9 +28,3 @@ Any rollout, backward-compat, or storage/compute implications.
 ## Self-hosting relevance
 - [ ] This impacts self-hosted deployments
 - [ ] This is specific to cloud-hosted environments
-
----
-
-Launchline is **open-core** and community-driven. Your contributions help shape the roadmap. For contribution & collaboration guidelines (licensing, PRs, triage, reviews), see .github/COLLABORATION.md.
-
-<!-- Labels: enhancement -->
