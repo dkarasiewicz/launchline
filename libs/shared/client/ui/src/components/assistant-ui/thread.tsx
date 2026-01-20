@@ -57,7 +57,7 @@ export const Thread: FC = () => {
           }}
         />
 
-        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex w-full max-w-(--thread-max-width) flex-col items-center justify-end rounded-t-lg bg-inherit pb-4 mx-auto">
+        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex w-full max-w-(--thread-max-width) flex-col items-center justify-end rounded-t-lg bg-inherit pb-4 mx-auto z-10">
           <ThreadScrollToBottom />
           <Composer />
         </ThreadPrimitive.ViewportFooter>
@@ -123,7 +123,7 @@ const ComposerAction: FC = () => {
       <AssistantIf condition={({ thread }) => !thread.isRunning}>
         <ComposerPrimitive.Send asChild>
           <Button size="icon" className="my-2 size-8 shrink-0 rounded-full">
-            <ArrowUpIcon className="size-4" />
+            <ArrowUpIcon className="h-4 w-4" />
             <span className="sr-only">Send</span>
           </Button>
         </ComposerPrimitive.Send>
@@ -136,7 +136,7 @@ const ComposerAction: FC = () => {
             size="icon"
             className="my-2 size-8 shrink-0 rounded-full"
           >
-            <SquareIcon className="size-4 fill-current" />
+            <SquareIcon className="h-4 w-4 fill-current" />
             <span className="sr-only">Stop</span>
           </Button>
         </ComposerPrimitive.Cancel>

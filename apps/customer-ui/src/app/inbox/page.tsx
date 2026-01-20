@@ -6,6 +6,8 @@ import { LogoIcon } from '@launchline/ui/components/logo';
 import { Button } from '@launchline/ui/components/ui/button';
 import { Badge } from '@launchline/ui/components/ui/badge';
 import { cn } from '@launchline/ui/lib/utils';
+import { useMutation } from '@apollo/client';
+import { ARCHIVE_THREAD_MUTATION } from '@launchline/ui/lib/apollo/operations/threads';
 
 // Define inbox item types locally (these will be stored as thread metadata)
 export type InboxItemType = 'blocker' | 'drift' | 'update' | 'coverage';
@@ -538,6 +540,9 @@ function InboxPageContent() {
   // Get threads from assistant-ui runtime using new API
   const threads = useAssistantState(({ threads }) => threads || []);
 
+  // Apollo mutation for archiving threads
+  const [archiveThread] = useMutation(ARCHIVE_THREAD_MUTATION);
+
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | InboxItemType>('all');
   const [showResolved, setShowResolved] = useState(false);
@@ -568,14 +573,20 @@ function InboxPageContent() {
     }));
   }, [threads]);
 
-  // Resolve function using runtime
-  const resolveItem = useCallback((itemId: string) => {
-    // TODO: Implement delete via GraphQL mutation (deleteThread)
-    // This will call the backend to archive/delete the thread
-    console.log('Resolving item:', itemId);
-    // Note: runtime.threadList doesn't have a delete method
-    // We need to implement this via GraphQL mutation
-  }, []);
+  // Resolve function using GraphQL mutation
+  const resolveItem = useCallback(
+    async (itemId: string) => {
+      try {
+        await archiveThread({
+          variables: { threadId: itemId },
+        });
+        console.log('Item resolved:', itemId);
+      } catch (error) {
+        console.error('Failed to resolve item:', error);
+      }
+    },
+    [archiveThread]
+  );
 
   // Filter and sort items
   const filteredItems = useMemo(() => {
