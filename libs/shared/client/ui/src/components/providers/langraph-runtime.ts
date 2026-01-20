@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   AssistantCloud,
@@ -231,20 +231,6 @@ const useLangGraphRuntimeImpl = ({
     isRunning,
   });
 
-  console.log('LangGraph Runtime - Messages:', threadMessages);
-  const loadThread = useMemo(
-    () =>
-      !load
-        ? undefined
-        : async (externalId: string) => {
-            console.log('Loading thread:', externalId);
-            const { messages, interrupts } = await load(externalId);
-            setMessages(messages);
-            setInterrupt(interrupts?.[0]);
-          },
-    [load, setMessages, setInterrupt],
-  );
-
   const runtime = useExternalStoreRuntime({
     isRunning,
     messages: threadMessages,
@@ -316,35 +302,26 @@ const useLangGraphRuntimeImpl = ({
       : undefined,
   });
 
-  // Get the current thread's externalId from threadListItem context (if available)
-  const threadListItemState = useAssistantState(({ threadListItem }) => {
-    return threadListItem ?? null;
-  });
-  const externalId = threadListItemState?.externalId;
-
   {
-    const loadingRef = useRef(false);
-    const lastLoadedIdRef = useRef<string | null>(null);
+    const api = useAssistantApi();
+
+    const loadRef = useRef(load);
+    useEffect(() => {
+      loadRef.current = load;
+    });
 
     useEffect(() => {
-      if (!loadThread) return;
+      const load = loadRef.current;
+      if (!load) return;
 
-      if (
-        externalId &&
-        !loadingRef.current &&
-        lastLoadedIdRef.current !== externalId
-      ) {
-        loadingRef.current = true;
-        const idToLoad = externalId;
-        loadThread(idToLoad).finally(() => {
-          loadingRef.current = false;
-          // Only mark as loaded if this is still the current externalId
-          if (idToLoad === externalId) {
-            lastLoadedIdRef.current = idToLoad;
-          }
-        });
-      }
-    }, [loadThread, externalId]);
+      const externalId = api.threadListItem().getState().externalId;
+      if (externalId == null) return;
+
+      load(externalId).then(({ messages, interrupts }) => {
+        setMessages(messages);
+        setInterrupt(interrupts?.[0]);
+      });
+    }, [api, setMessages, setInterrupt]);
   }
 
   return runtime;
