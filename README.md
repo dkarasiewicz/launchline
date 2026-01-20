@@ -50,7 +50,7 @@ We start where the pain is highest: execution. Inbox → decisions → unblock �
 
 Signals flow through the system as follows:
 
-```text
+\`\`\`text
 Signals (webhooks / SDK events)
 ↓
 PostgreSQL (structured event store)
@@ -64,7 +64,7 @@ Inbox items
 Assistant UI + DeepAgent (chat + reasoning)
 ↓
 Tool calls (user‑approved execution)
-```
+\`\`\`
 
 Key components:
 
@@ -116,9 +116,9 @@ See `.env` for the full list of required variables (database, cache, API keys, e
 
 From the repository root:
 
-```bash
+\`\`\`bash
 docker-compose up -d
-```
+\`\`\`
 
 This will start **only the development dependencies/services** needed for local development:
 
@@ -141,17 +141,17 @@ The SDK is MIT‑licensed and provides a thin client for calling the Launchline 
 
 Install from npm:
 
-```bash
+\`\`\`bash
 npm install @launchline/sdk
 # or
 yarn add @launchline/sdk
 # or
 pnpm add @launchline/sdk
-```
+\`\`\`
 
 Basic usage:
 
-```ts
+\`\`\`ts
 import { LaunchlineClient } from '@launchline/sdk';
 
 const client = new LaunchlineClient({
@@ -169,7 +169,7 @@ async function main() {
 }
 
 main().catch(console.error);
-```
+\`\`\`
 
 See the SDK package `README` for full API documentation and examples.
 
@@ -179,13 +179,13 @@ See the SDK package `README` for full API documentation and examples.
 
 1. Install dependencies:
 
-```bash
+\`\`\`bash
 npm install
 # or
 yarn install
 # or
 pnpm install
-```
+\`\`\`
 
 2. Ensure your local services (PostgreSQL, Redis, RabbitMQ) are running.  
    You can use `docker-compose up -d` to start these dependencies.
@@ -194,19 +194,19 @@ pnpm install
 
 4. Run database migrations:
 
-```bash
+\`\`\`bash
 pnpm nx migrate-run core
-```
+\`\`\`
 
 5. Start dev servers:
 
-```bash
+\`\`\`bash
 # Backend API (with HMR)
 pnpm nx serve-hmr core
 
 # Frontend (customer UI)
 pnpm nx start customer-ui -p 2201
-```
+\`\`\`
 
 ---
 
@@ -241,4 +241,3 @@ This application currently uses [PostHog](https://posthog.com) for:
 - **OTP Email Delivery**: One-time password emails for authentication
 
 **Note**: We plan to add support for custom SNS (Simple Notification Service) configurations in the future, allowing you to use your own email delivery service. For now, PostHog handles both analytics and transactional emails.
-
