@@ -212,14 +212,16 @@ pnpm nx start customer-ui -p 2201
 
 ## Contributing
 
-Issues and pull requests are welcome.
+Issues and pull requests are welcome. The community can shape the roadmap — thoughtful contributions are encouraged.
+
+For contribution and collaboration guidelines (licensing, code review, PR expectations, triage), see `.github/COLLABORATION.md`.
 
 By contributing, you agree that:
 
-- Changes to the core application are licensed under BSL 1\.1.
-- Changes to SDKs and libraries follow the license of that package (usually MIT).
+- Changes to the core application are licensed under **BSL 1.1**.
+- Changes to SDKs and libraries follow the license of that package (usually **MIT**).
 
-See `CONTRIBUTING.md` (if present) for guidelines.
+We believe PM tools should be auditable, extensible, and community-owned.
 
 ---
 
