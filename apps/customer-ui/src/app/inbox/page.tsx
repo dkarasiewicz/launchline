@@ -6,7 +6,7 @@ import { LogoIcon } from '@launchline/ui/components/logo';
 import { Button } from '@launchline/ui/components/ui/button';
 import { Badge } from '@launchline/ui/components/ui/badge';
 import { cn } from '@launchline/ui/lib/utils';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { ARCHIVE_THREAD_MUTATION } from '@launchline/ui/lib/apollo/operations/threads';
 
 // Define inbox item types locally (these will be stored as thread metadata)
