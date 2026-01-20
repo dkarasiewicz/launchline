@@ -1,8 +1,15 @@
-import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
+import {
+  Global,
+  Inject,
+  Module,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { RedisPubSub } from 'graphql-redis-subscriptions';
 import { Redis, RedisOptions, Cluster } from 'ioredis';
+import { createClient, createCluster } from 'redis';
 
 import { CACHE_STORE, PUB_SUB, REDIS_CLIENT, REDIS_CONFIG } from './tokens';
 import KeyvRedis from '@keyv/redis';
@@ -72,23 +79,36 @@ import KeyvRedis from '@keyv/redis';
       provide: REDIS_CLIENT,
       useFactory: (config: RedisOptions, configService: ConfigService) =>
         configService.get('cache.clusterMode')
-          ? new Cluster(
-              [
+          ? createCluster({
+              rootNodes: [
                 {
-                  port: config.port,
-                  host: config.host,
+                  url: `redis://${config.host}:${config.port}`,
                 },
               ],
-              {
-                slotsRefreshTimeout: 5000,
-                redisOptions: {
-                  username: config.username,
-                  password: config.password,
-                  tls: config.tls,
-                },
+              defaults: {
+                username: config.username,
+                password: config.password,
+                socket: config.tls
+                  ? {
+                      tls: true,
+                    }
+                  : {},
               },
-            )
-          : new Redis(config),
+            })
+          : createClient({
+              password: config.password,
+              username: config.username,
+              socket: config.tls
+                ? {
+                    host: config.host,
+                    port: config.port,
+                    tls: true,
+                  }
+                : {
+                    host: config.host,
+                    port: config.port,
+                  },
+            }),
       inject: [REDIS_CONFIG, ConfigService],
     },
     {
@@ -109,11 +129,17 @@ import KeyvRedis from '@keyv/redis';
   ],
   exports: [PUB_SUB, REDIS_CLIENT, CACHE_STORE],
 })
-export class RedisModule implements OnApplicationShutdown {
+export class RedisModule
+  implements OnApplicationShutdown, OnApplicationBootstrap
+{
   constructor(
     @Inject(REDIS_CLIENT) private readonly redisClient: Redis,
     @Inject(PUB_SUB) private readonly pubSub: RedisPubSub,
   ) {}
+
+  async onApplicationBootstrap() {
+    await this.redisClient.connect();
+  }
 
   async onApplicationShutdown() {
     await Promise.all([this.pubSub.close(), this.redisClient.quit()]);

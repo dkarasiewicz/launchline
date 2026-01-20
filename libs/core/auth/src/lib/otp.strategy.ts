@@ -5,7 +5,7 @@ import { AuthService } from './auth.service';
 import { AuthenticatedUser } from '@launchline/core-common';
 import { Request } from 'express';
 import { validate } from 'class-validator';
-import { PhoneNumberOtpBody } from './auth.models';
+import { VerifyEmailOtpDto } from './auth.models';
 
 @Injectable()
 export class OtpStrategy extends PassportStrategy(Strategy, 'otp') {
@@ -15,9 +15,9 @@ export class OtpStrategy extends PassportStrategy(Strategy, 'otp') {
 
   async validate(req: Request): Promise<AuthenticatedUser> {
     const { email, code } = req.body;
-    const otpBody = new PhoneNumberOtpBody();
+    const otpBody = new VerifyEmailOtpDto();
 
-    otpBody.phoneNumber = email;
+    otpBody.email = email;
     otpBody.code = code;
 
     const errors = await validate(otpBody);

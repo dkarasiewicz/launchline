@@ -36,8 +36,8 @@ export class AuthController {
   @Public()
   @Post('login/otp/send')
   @HttpCode(HttpStatus.OK)
-  async sendOtp(@Body() { phoneNumber }: SendOtpDto) {
-    const success = await this.authService.sendEmailOtp(phoneNumber);
+  async sendOtp(@Body() { email }: SendOtpDto) {
+    const success = await this.authService.sendEmailOtp(email);
 
     if (!success) {
       throw new BadRequestException({

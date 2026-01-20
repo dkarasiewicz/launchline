@@ -26,7 +26,9 @@ import {
   WorkspaceMemberStatus,
 } from '@launchline/models';
 import {
+  CreateWorkspaceInput,
   CreateWorkspaceInvitationInput,
+  CreateWorkspaceResult,
   RedeemWorkspaceInvitationInput,
   Workspace,
   WorkspaceInvitation,
@@ -272,6 +274,7 @@ export class WorkspaceService {
             eq(workspaceMembership.email, email),
             isNull(workspaceMembership.deactivatedAt),
             ne(workspaceMembership.status, WorkspaceMemberStatus.INVITED),
+            eq(workspaceMembership.workspaceId, invite.workspaceId),
           ),
         )
         .limit(1);
@@ -321,6 +324,77 @@ export class WorkspaceService {
         },
       });
     });
+  }
+
+  async createWorkspace(
+    input: CreateWorkspaceInput,
+  ): Promise<CreateWorkspaceResult> {
+    const workspaceId = randomUUID();
+    const adminUserId = randomUUID();
+    const membershipId = randomUUID();
+    const inviteId = randomUUID();
+    const token = randomBytes(16).toString('hex');
+    const now = new Date();
+    const expiresAt = input.inviteExpiresAt
+      ? new Date(input.inviteExpiresAt)
+      : addDays(now, 7);
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(workspace).values({
+        id: workspaceId,
+        name: input.name,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await tx.insert(workspaceMembership).values({
+        id: membershipId,
+        createdAt: now,
+        updatedAt: now,
+        workspaceId,
+        userId: adminUserId,
+        role: WorkspaceMemberRole.ADMIN,
+        status: WorkspaceMemberStatus.INVITED,
+        email: input.adminEmail,
+        fullName: input.adminName || null,
+      });
+      await tx.insert(workspaceInvite).values({
+        id: inviteId,
+        createdAt: now,
+        updatedAt: now,
+        createdByUserId: adminUserId,
+        token,
+        workspaceMembershipId: membershipId,
+        expiresAt,
+      });
+
+      this.logger.log(
+        {
+          workspaceId,
+          adminEmail: input.adminEmail,
+          inviteToken: token,
+        },
+        `Created workspace "${input.name}" (${workspaceId})`,
+      );
+
+      this.analyticsClient.capture({
+        distinctId: adminUserId,
+        event: AnalyticsEventType.WORKSPACE_INVITATION_SENT,
+        properties: {
+          workspaceId,
+          workspaceName: input.name,
+          adminEmail: input.adminEmail,
+          isNewWorkspace: true,
+        },
+      });
+    });
+
+    return {
+      workspaceId,
+      workspaceName: input.name,
+      inviteToken: token,
+      adminEmail: input.adminEmail,
+      inviteExpiresAt: expiresAt,
+    };
   }
 
   private mapToWorkspaceMember({

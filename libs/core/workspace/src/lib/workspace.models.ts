@@ -142,3 +142,42 @@ export class RedeemWorkspaceInvitationInput {
   @IsEmail()
   email!: string;
 }
+
+@InputType()
+export class CreateWorkspaceInput {
+  @Field()
+  @IsString()
+  name!: string;
+
+  @Field()
+  @IsEmail()
+  adminEmail!: string;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  adminName?: string;
+
+  @Field(() => String, { nullable: true })
+  @IsDateString()
+  @IsOptional()
+  inviteExpiresAt?: string;
+}
+
+@ObjectType()
+export class CreateWorkspaceResult {
+  @Field()
+  workspaceId!: string;
+
+  @Field()
+  workspaceName!: string;
+
+  @Field()
+  inviteToken!: string;
+
+  @Field()
+  adminEmail!: string;
+
+  @Field(() => Date)
+  inviteExpiresAt!: Date;
+}
