@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+const modelSchema = z.object({
+  apiKey: z.optional(z.string()),
+  modelUrl: z.optional(z.string()),
+  modelName: z.optional(z.string()),
+  maxRetries: z.number(),
+});
+
 const configSchema = z.object({
   port: z.number(),
   logLevel: z.string(),
@@ -50,11 +57,18 @@ const configSchema = z.object({
     sslEnabled: z.boolean(),
   }),
   ai: z.object({
-    hf: z.object({
-      apiKey: z.optional(z.string()),
-      modelUrl: z.optional(z.string()),
-      modelName: z.optional(z.string()),
-      maxRetries: z.number(),
+    models: z.object({
+      primary: modelSchema,
+      fast: modelSchema,
+      reasoning: modelSchema,
+      analysis: modelSchema,
+    }),
+    memory: z.object({
+      embeddingType: z.string(),
+      embeddingDims: z.number(),
+      defaultSearchLimit: z.number(),
+      maxImportance: z.number(),
+      minImportance: z.number(),
     }),
   }),
   postHog: z.object({
@@ -131,11 +145,45 @@ export const config = () => ({
     sslEnabled: process.env.CACHE_SSL_ENABLED === 'true',
   },
   ai: {
-    hf: {
-      apiKey: process.env.AI_HF_API_KEY,
-      modelUrl: process.env.AI_HF_MODEL_URL,
-      modelName: process.env.AI_HF_MODEL_NAME,
-      maxRetries: parseInt(process.env.AI_HF_MAX_RETRIES || '2', 10),
+    models: {
+      primary: {
+        apiKey: process.env.PRIMARY_MODEL_API_KEY,
+        modelUrl: process.env.PRIMARY_MODEL_URL,
+        modelName: process.env.PRIMARY_MODEL_NAME,
+        maxRetries: parseInt(process.env.PRIMARY_MODEL_MAX_RETRIES || '3', 10),
+      },
+      fast: {
+        apiKey: process.env.FAST_MODEL_API_KEY,
+        modelUrl: process.env.FAST_MODEL_URL,
+        modelName: process.env.FAST_MODEL_NAME,
+        maxRetries: parseInt(process.env.FAST_MODEL_MAX_RETRIES || '3', 10),
+      },
+      reasoning: {
+        apiKey: process.env.REASONING_MODEL_API_KEY,
+        modelUrl: process.env.REASONING_MODEL_URL,
+        modelName: process.env.REASONING_MODEL_NAME,
+        maxRetries: parseInt(
+          process.env.REASONING_MODEL_MAX_RETRIES || '3',
+          10,
+        ),
+      },
+      analysis: {
+        apiKey: process.env.ANALYSIS_MODEL_API_KEY,
+        modelUrl: process.env.ANALYSIS_MODEL_URL,
+        modelName: process.env.ANALYSIS_MODEL_NAME,
+        maxRetries: parseInt(process.env.ANALYSIS_MODEL_MAX_RETRIES || '3', 10),
+      },
+    },
+    memory: {
+      embeddingType:
+        process.env.MEMORY_EMBEDDING_TYPE || 'text-embedding-3-small',
+      embeddingDims: parseInt(process.env.MEMORY_EMBEDDING_DIMS || '1536', 10),
+      defaultSearchLimit: parseInt(
+        process.env.MEMORY_DEFAULT_SEARCH_LIMIT || '20',
+        10,
+      ),
+      maxImportance: parseFloat(process.env.MEMORY_MAX_IMPORTANCE || '1.0'),
+      minImportance: parseFloat(process.env.MEMORY_MIN_IMPORTANCE || '0.0'),
     },
   },
   postHog: {
