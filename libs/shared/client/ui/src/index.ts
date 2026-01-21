@@ -34,5 +34,20 @@ export * from './lib/assistant';
 
 export * from './lib/posthog';
 
+// Inbox store types
+export type {
+  InboxItemType,
+  InboxItemStatus,
+  InboxItemPriority,
+  LinkedContext,
+  LinearContext,
+  GitHubContext,
+  SlackContext,
+  InboxItem,
+  InboxMessage,
+  InboxAction,
+  ExecutionLog,
+} from './lib/inbox-store';
+
 // Runtime provider
 export * from './components/providers/LaunchlineRuntimeProvider';

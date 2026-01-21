@@ -33,6 +33,7 @@ import {
   SendSlackMessageToolUI,
   GenerateProjectUpdateTool,
   WriteTodosToolUI,
+  InternetSearchToolUI,
 } from '@launchline/ui/components/tools/linea/LineaTools';
 
 import {
@@ -214,6 +215,7 @@ function InboxLineaThread({
       {/* Human-in-the-loop Approval UIs */}
       <UpdateLinearTicketToolUI />
       <SendSlackMessageToolUI />
+      <InternetSearchToolUI />
       {/* DeepAgents built-in write_todos for task planning */}
       <WriteTodosToolUI />
     </div>

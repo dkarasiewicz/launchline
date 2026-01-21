@@ -12,6 +12,9 @@ import {
 import { createThreadListAdapter } from '../../lib/assistant/thread-adapter';
 import { BytesLineDecoder, SSEDecoder } from './sse';
 import { useLangGraphRuntime } from './langraph-runtime';
+import { ThreadState } from '@langchain/langgraph-sdk';
+import { constructMessageFromParams } from './langchain-utils';
+import { type SerializedConstructor } from '@langchain/core/load/serializable';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
@@ -43,9 +46,16 @@ async function* streamMessages({
     throw new Error(`Failed to stream messages: ${response.statusText}`);
   }
 
-  const stream = response.body
-    .pipeThrough(BytesLineDecoder())
-    .pipeThrough(SSEDecoder());
+  const stream = response.body.pipeThrough(BytesLineDecoder()).pipeThrough<
+    | {
+        data: [SerializedConstructor, Record<string, unknown>];
+        event: 'messages';
+      }
+    | {
+        data: Record<string, unknown>;
+        event: 'updates';
+      }
+  >(SSEDecoder());
 
   const reader = stream.getReader();
 
@@ -55,7 +65,60 @@ async function* streamMessages({
 
       if (done) break;
 
-      yield value;
+      if (!value) continue;
+
+      switch (value.event) {
+        case 'messages': {
+          const parsedMessage = constructMessageFromParams(value.data[0]);
+
+          if (parsedMessage.type !== 'ai') {
+            continue;
+          }
+
+          parsedMessage.type = 'AIMessageChunk' as 'ai'; // Mark as chunk
+
+          yield {
+            event: 'messages',
+            data: [parsedMessage, value.data[1]],
+          };
+          break;
+        }
+        case 'updates': {
+          if (value.data.__interrupt__) {
+            yield {
+              event: 'updates',
+              data: value.data,
+            };
+
+            break;
+          }
+
+          const rawUpdate = value.data[Object.keys(value.data)[0]] as {
+            messages?: SerializedConstructor[];
+            __interrupt__?: unknown[];
+          };
+          const parsedUpdate: {
+            messages?: LangChainMessage[];
+            __interrupt__?: unknown[];
+          } = {};
+
+          parsedUpdate.__interrupt__ = rawUpdate.__interrupt__;
+
+          if (rawUpdate.messages) {
+            parsedUpdate.messages = rawUpdate.messages.map(
+              constructMessageFromParams,
+            ) as LangChainMessage[];
+          }
+
+          yield {
+            event: 'updates',
+            data: parsedUpdate,
+          };
+          break;
+        }
+        default:
+          console.warn(`Unknown event type: ${value}`);
+      }
     }
   } finally {
     reader.releaseLock();
@@ -65,7 +128,11 @@ async function* streamMessages({
 /**
  * Get thread state from the backend
  */
-async function getThreadState(threadId: string) {
+async function getThreadState(threadId: string): Promise<
+  ThreadState<{
+    messages: SerializedConstructor[];
+  }>
+> {
   const response = await fetch(
     `${API_BASE}/assistant/thread/${threadId}/state?threadId=${threadId}`,
     {
@@ -106,29 +173,14 @@ export function LaunchlineRuntimeProvider({
           try {
             const state = await getThreadState(externalId);
 
-            return {
-              messages: (
-                (
-                  state.values as {
-                    messages?: {
-                      id: string[];
-                      kwargs: {
-                        content: string;
-                        id: string;
-                      };
-                    }[];
-                  }
-                ).messages ?? []
-              ).map((msg): LangChainMessage => {
-                const isHumanMsg = msg.id.includes('HumanMessage');
-                const isAIMessage = msg.id.includes('AIMessageChunk');
+            const messages = state.values.messages?.map(
+              constructMessageFromParams,
+            ) as LangChainMessage[];
 
-                return {
-                  id: msg.kwargs.id,
-                  type: isHumanMsg ? 'human' : isAIMessage ? 'ai' : 'system',
-                  content: msg.kwargs.content,
-                };
-              }),
+            return {
+              messages: (messages ?? []).filter((message) =>
+                ['ai', 'tool', 'human', 'system'].includes(message.type),
+              ),
               interrupts: state.tasks?.[0]?.interrupts ?? [],
             };
           } catch (error) {
