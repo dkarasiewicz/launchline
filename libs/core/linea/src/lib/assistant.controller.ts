@@ -4,24 +4,28 @@ import {
   Controller,
   Get,
   Inject,
+  Logger,
   Query,
   RequestMethod,
   Sse,
   VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { WorkspaceFacade } from '@launchline/core-workspace';
-import { RunsInvokePayload, ThreadState } from '@langchain/langgraph-sdk';
+import { RunsInvokePayload } from '@langchain/langgraph-sdk';
 
 import { LINEA_AGENT } from './tokens';
-import { ReactAgent, AIMessageChunk } from 'langchain';
+import { ReactAgent } from 'langchain';
 import { AuthenticatedUser, CurrentUser } from '@launchline/core-common';
-import { from, map, Observable } from 'rxjs';
+import { catchError, from, map, Observable, of } from 'rxjs';
 import { LangChainMessage } from '@assistant-ui/react-langgraph';
 import { AssistantService } from './assistant.service';
 import { randomUUID } from 'crypto';
+import { StateSnapshot } from '@langchain/langgraph';
 
 @Controller({ path: 'assistant', version: VERSION_NEUTRAL })
 export class AssistantController {
+  private readonly logger = new Logger(AssistantController.name);
+
   constructor(
     @Inject(LINEA_AGENT)
     private readonly agent: ReactAgent,
@@ -43,6 +47,15 @@ export class AssistantController {
       !streamPayload.input ||
       !Array.isArray(streamPayload.input['messages'])
     ) {
+      this.logger.error(
+        {
+          userId: currentUser.userId,
+          threadId,
+          streamPayload,
+        },
+        'Invalid input payload for agent stream',
+      );
+
       throw new BadRequestException('Invalid input payload');
     }
 
@@ -69,7 +82,7 @@ export class AssistantController {
           workspaceId: workspace.id,
           userId: currentUser.userId,
         },
-        streamMode: 'messages',
+        streamMode: ['messages', 'updates'],
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         //@ts-expect-error
         subgraphs: true,
@@ -78,31 +91,38 @@ export class AssistantController {
 
     return from(agentStream).pipe(
       map((chunk) => {
-        const [type, data] = (chunk as unknown as [string, unknown[]]) || [
-          '',
-          [],
-        ];
-
-        if (AIMessageChunk.isInstance(data[0])) {
-          const aiChunk = data[0] as AIMessageChunk;
-
-          return {
-            type: 'messages',
-            data: [
-              {
-                id: aiChunk.id,
-                type: 'AIMessageChunk',
-                content: aiChunk.content,
-                tool_call_chunks: aiChunk.tool_call_chunks,
-              },
-            ],
-          };
+        if (ArrayBuffer.isView(chunk) || !chunk) {
+          throw new BadRequestException();
         }
 
-        return {
-          type,
-          data,
-        };
+        const [_, type, data] = chunk as unknown as [
+          [string],
+          (typeof chunk)[0],
+          (typeof chunk)[1],
+        ];
+
+        switch (type) {
+          default:
+            return {
+              type,
+              data,
+            };
+        }
+      }),
+      catchError((error) => {
+        this.logger.error(
+          {
+            error,
+            userId: currentUser.userId,
+            threadId: currentThreadId,
+          },
+          'Error in agent stream',
+        );
+
+        return of({
+          type: 'messages/partial',
+          data: [],
+        });
       }),
     );
   }
@@ -111,12 +131,12 @@ export class AssistantController {
   async getThreadState(
     @CurrentUser() currentUser: AuthenticatedUser,
     @Query('threadId') threadId: string,
-  ): Promise<ThreadState<Record<string, unknown>>> {
+  ): Promise<StateSnapshot> {
     const workspace = await this.workspaceFacade.getWorkspaceByUserId(
       currentUser.userId,
     );
 
-    return this.agent.getState({
+    return this.agent.graph.getState({
       configurable: {
         thread_id: threadId,
         workspaceId: workspace.id,

@@ -26,6 +26,7 @@ import {
   Edit2,
   MessageSquare,
   Send,
+  Search,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
@@ -425,6 +426,152 @@ export const SendSlackMessageToolUI = makeAssistantToolUI<
                   variant: 'default',
                   confirmLabel: 'Confirm Send',
                   icon: <Send className="mr-1.5 h-4 w-4" />,
+                },
+              ]}
+              onAction={(id) => {
+                if (id === 'approve') handleApprove();
+                if (id === 'reject') handleReject();
+                if (id === 'edit') handleEdit();
+              }}
+            />
+          </CardFooter>
+        )}
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// INTERNET SEARCH APPROVAL UI
+// ============================================================================
+
+type InternetSearchArgs = {
+  query: string;
+  maxResults?: number;
+};
+
+type InternetSearchResult = {
+  approve?: boolean;
+  edit?: boolean;
+  reject?: boolean;
+  error?: string;
+  success?: boolean;
+};
+
+export const InternetSearchToolUI = makeAssistantToolUI<
+  InternetSearchArgs,
+  string
+>({
+  toolName: 'internet_search',
+  render: function InternetSearchUI({ args, result, status, addResult }) {
+    let resultObj: InternetSearchResult = {};
+    try {
+      resultObj = result ? JSON.parse(result) : {};
+    } catch {
+      resultObj = { error: result || 'Unknown error' };
+    }
+
+    const handleApprove = () => {
+      addResult(JSON.stringify({ approve: true }));
+    };
+
+    const handleReject = () => {
+      addResult(JSON.stringify({ reject: true }));
+    };
+
+    const handleEdit = () => {
+      addResult(JSON.stringify({ edit: true }));
+    };
+
+    const isPending = !result && status.type !== 'running';
+    const isRunning = status.type === 'running';
+    const wasApproved = resultObj.approve === true;
+    const wasRejected =
+      resultObj.reject === true || resultObj.approve === false;
+    const wasEdited = resultObj.edit === true;
+
+    return (
+      <Card className="w-full max-w-md overflow-hidden">
+        <CardHeader
+          className={cn(
+            'pb-3',
+            wasApproved && 'bg-status-success-muted',
+            wasRejected && 'bg-status-error-muted',
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {wasApproved && (
+              <CheckCircle className="h-5 w-5 text-status-success" />
+            )}
+            {wasRejected && <XCircle className="h-5 w-5 text-status-error" />}
+            {!wasApproved && !wasRejected && (
+              <Search className="h-5 w-5 text-status-info" />
+            )}
+            <CardTitle className="text-base font-semibold">
+              {wasApproved
+                ? 'Search Completed'
+                : wasRejected
+                  ? 'Search Cancelled'
+                  : 'Internet Search'}
+            </CardTitle>
+          </div>
+        </CardHeader>
+
+        <CardContent className="pt-4 space-y-3">
+          {/* Search Query */}
+          <div className="rounded-lg border bg-background p-3">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Search Query
+            </span>
+            <p className="mt-2 text-sm whitespace-pre-wrap">{args.query}</p>
+          </div>
+
+          {/* Max Results */}
+          {args.maxResults && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Max Results</span>
+              <Badge variant="secondary">{args.maxResults}</Badge>
+            </div>
+          )}
+
+          {/* Status Messages */}
+          {isRunning && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Searching...</span>
+            </div>
+          )}
+
+          {wasEdited && (
+            <p className="text-sm text-muted-foreground">
+              Edit requested - please provide updated search query.
+            </p>
+          )}
+        </CardContent>
+
+        {/* Action Buttons - only show when pending */}
+        {isPending && (
+          <CardFooter className="border-t bg-muted/30 pt-4">
+            <ApprovalActions
+              actions={[
+                {
+                  id: 'reject',
+                  label: 'Cancel',
+                  variant: 'ghost',
+                  icon: <XCircle className="mr-1.5 h-4 w-4" />,
+                },
+                {
+                  id: 'edit',
+                  label: 'Edit',
+                  variant: 'outline',
+                  icon: <Edit2 className="mr-1.5 h-4 w-4" />,
+                },
+                {
+                  id: 'approve',
+                  label: 'Search',
+                  variant: 'default',
+                  confirmLabel: 'Confirm Search',
+                  icon: <Search className="mr-1.5 h-4 w-4" />,
                 },
               ]}
               onAction={(id) => {

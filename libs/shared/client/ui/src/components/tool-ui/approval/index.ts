@@ -2,4 +2,8 @@
  * Approval Tool UI Index
  */
 
-export { UpdateLinearTicketToolUI, SendSlackMessageToolUI } from "./approval";
+export {
+  UpdateLinearTicketToolUI,
+  SendSlackMessageToolUI,
+  InternetSearchToolUI,
+} from './approval';

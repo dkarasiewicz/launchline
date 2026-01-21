@@ -49,6 +49,9 @@ export class AgentFactory {
       store: this.store,
       checkpointer: this.checkpointer,
       subagents,
+      interruptOn: {
+        internet_search: true,
+      },
     }) as unknown as DeepAgent;
   }
 }
