@@ -13,6 +13,7 @@ import { createClient } from 'graphql-ws';
 const makeClient = (gqlApiUrl?: string) => {
   const httpLink = new HttpLink({
     uri: gqlApiUrl,
+    credentials: 'include',
   });
 
   const wsUrl = gqlApiUrl?.replace(/^http/, 'ws');

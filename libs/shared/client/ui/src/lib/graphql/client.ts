@@ -46,6 +46,7 @@ export async function graphqlRequest<T>(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ query, variables }),
+    credentials: 'include',
   });
 
   if (!response.ok) {

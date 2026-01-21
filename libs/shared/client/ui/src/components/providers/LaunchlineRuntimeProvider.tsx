@@ -40,6 +40,7 @@ async function* streamMessages({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ input: { messages } }),
+    credentials: 'include',
   });
 
   if (!response.ok || !response.body) {
@@ -137,6 +138,7 @@ async function getThreadState(threadId: string): Promise<
     `${API_BASE}/assistant/thread/${threadId}/state?threadId=${threadId}`,
     {
       method: 'GET',
+      credentials: 'include',
     },
   );
 

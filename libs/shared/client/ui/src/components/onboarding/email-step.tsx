@@ -69,6 +69,7 @@ export function EmailStep(props: EmailStepProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email }),
+        credentials: 'include',
       });
 
       if (!response.ok) {

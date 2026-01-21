@@ -115,6 +115,7 @@ export function OtpStep(props: OtpStepProps) {
           email,
           code,
         }),
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -143,6 +144,7 @@ export function OtpStep(props: OtpStepProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email }),
+        credentials: 'include',
       });
     } catch {
       // Silently fail - user can try again
