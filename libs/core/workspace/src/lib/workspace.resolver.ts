@@ -71,8 +71,7 @@ export class WorkspaceResolver {
     return true;
   }
 
-  // @Roles(UserRole.ADMIN)
-  @Public()
+  @Roles(UserRole.ADMIN)
   @Mutation(() => CreateWorkspaceResult)
   async createWorkspace(
     @Args('input') input: CreateWorkspaceInput,
