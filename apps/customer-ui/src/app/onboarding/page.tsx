@@ -19,7 +19,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 export default function OnboardingPage() {
   const posthog = usePostHog();
   const showIntegrations =
-    posthog?.isFeatureEnabled('onboarding-integrations') ?? false;
+    posthog?.isFeatureEnabled('onboarding-integrations') ?? true;
 
   const [step, setStep] = useState<OnboardingStep>('invite-code');
   const [data, setData] = useState<OnboardingData>({

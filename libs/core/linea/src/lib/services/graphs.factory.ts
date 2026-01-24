@@ -208,6 +208,7 @@ export class GraphsFactory {
           status: event.status || 'unknown',
           url: event.metadata?.['url'] as string | undefined,
         },
+        prContext: this.extractPrContext(event),
         teamContext: {
           teamId: (event.metadata?.['team'] as { id: string } | undefined)?.id,
           teamName: (event.metadata?.['team'] as { name: string } | undefined)
@@ -519,27 +520,121 @@ export class GraphsFactory {
       const payload = event.payload;
       const pr = payload['pull_request'] as Record<string, unknown> | undefined;
       const issue = payload['issue'] as Record<string, unknown> | undefined;
+      const linea = payload['linea'] as
+        | {
+            pr?: Record<string, unknown>;
+            prSummary?: string;
+            prContext?: Record<string, unknown>;
+            issue?: Record<string, unknown>;
+            commit?: Record<string, unknown>;
+            commitSummary?: string;
+            branch?: string;
+          }
+        | undefined;
+
+      const repo = payload['repository'] as Record<string, unknown> | undefined;
+      const repoFullName =
+        (repo?.['full_name'] as string | undefined) ||
+        (repo?.['name'] as string | undefined);
+
+      const commit =
+        (linea?.commit as Record<string, unknown> | undefined) ||
+        (payload['head_commit'] as Record<string, unknown> | undefined);
+
+      const baseMetadata = {
+        ...payload,
+        url:
+          (pr?.['html_url'] as string | undefined) ||
+          (issue?.['html_url'] as string | undefined) ||
+          (commit?.['html_url'] as string | undefined),
+        repo: repoFullName,
+        linea,
+      };
+
+      if (pr) {
+        const title = (pr['title'] as string) || 'GitHub PR';
+        const body = (pr['body'] as string) || '';
+        const summary = linea?.prSummary ? `\n\n${linea.prSummary}` : '';
+        return {
+          id: event.id,
+          workspaceId,
+          source: 'github' as const,
+          eventType: event.eventType,
+          entityId: `gh-pr-${pr['number']}`,
+          entityType: 'pr',
+          title,
+          description: `${body}${summary}`.trim(),
+          status: (pr['state'] as string) || 'unknown',
+          assignee: (
+            (pr['assignee'] as { login: string } | undefined) || undefined
+          )?.login,
+          metadata: baseMetadata,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (issue) {
+        const title = (issue['title'] as string) || 'GitHub Issue';
+        const body = (issue['body'] as string) || '';
+        const issueDetails = linea?.issue as Record<string, unknown> | undefined;
+        const issueSummary = issueDetails?.['body']
+          ? `\n\n${issueDetails['body'] as string}`
+          : '';
+        return {
+          id: event.id,
+          workspaceId,
+          source: 'github' as const,
+          eventType: event.eventType,
+          entityId: `gh-issue-${issue['number']}`,
+          entityType: 'issue',
+          title,
+          description: `${body}${issueSummary}`.trim(),
+          status: (issue['state'] as string) || 'unknown',
+          assignee: (
+            (issue['assignee'] as { login: string } | undefined) || undefined
+          )?.login,
+          metadata: baseMetadata,
+          timestamp: event.timestamp,
+        };
+      }
+
+      if (commit) {
+        const sha =
+          (commit['sha'] as string | undefined) ||
+          (commit['id'] as string | undefined) ||
+          event.id;
+        const message =
+          (commit['message'] as string | undefined) || 'Commit update';
+        const summary = linea?.commitSummary
+          ? `\n\n${linea.commitSummary}`
+          : '';
+        return {
+          id: event.id,
+          workspaceId,
+          source: 'github' as const,
+          eventType: event.eventType,
+          entityId: `gh-commit-${sha}`,
+          entityType: 'commit',
+          title: message,
+          description: summary.trim(),
+          status: 'pushed',
+          assignee: undefined,
+          metadata: baseMetadata,
+          timestamp: event.timestamp,
+        };
+      }
 
       return {
         id: event.id,
         workspaceId,
         source: 'github' as const,
         eventType: event.eventType,
-        entityId: pr
-          ? `gh-pr-${pr['number']}`
-          : issue
-            ? `gh-issue-${issue['number']}`
-            : event.id,
-        entityType: pr ? 'pr' : 'issue',
-        title: (pr?.['title'] || issue?.['title'] || 'GitHub Event') as string,
-        description: (pr?.['body'] || issue?.['body'] || '') as string,
-        status: (pr?.['state'] || issue?.['state'] || 'unknown') as string,
-        assignee: (
-          (pr?.['assignee'] || issue?.['assignee']) as
-            | { login: string }
-            | undefined
-        )?.login,
-        metadata: payload,
+        entityId: event.id,
+        entityType: 'issue',
+        title: 'GitHub Event',
+        description: '',
+        status: 'unknown',
+        metadata: baseMetadata,
         timestamp: event.timestamp,
       };
     });
@@ -595,6 +690,57 @@ export class GraphsFactory {
     });
   }
 
+  private extractPrContext(event: NormalizedEvent): SignalContext['prContext'] {
+    if (event.source !== 'github' || event.entityType !== 'pr') {
+      return undefined;
+    }
+
+    const linea = event.metadata?.['linea'] as
+      | { prContext?: Record<string, unknown>; pr?: Record<string, unknown> }
+      | undefined;
+    const prContext = linea?.prContext as
+      | {
+          filesChanged?: number;
+          additions?: number;
+          deletions?: number;
+          hasTests?: boolean;
+          hasBreakingChange?: boolean;
+          hasSecurityRelevant?: boolean;
+          touchesConfig?: boolean;
+          touchesInfra?: boolean;
+          touchesApi?: boolean;
+          hasDependencyUpdate?: boolean;
+        }
+      | undefined;
+
+    if (!prContext) {
+      return undefined;
+    }
+
+    const prDetails = linea?.pr as
+      | { labels?: string[]; reviewers?: string[] }
+      | undefined;
+
+    return {
+      filesChanged: prContext.filesChanged || 0,
+      additions: prContext.additions || 0,
+      deletions: prContext.deletions || 0,
+      reviewers: prDetails?.reviewers || [],
+      labels: prDetails?.labels || [],
+      isMerged: Boolean((linea?.pr as { merged?: boolean })?.merged),
+      isDraft: Boolean((linea?.pr as { draft?: boolean })?.draft),
+      patterns: {
+        hasTests: Boolean(prContext.hasTests),
+        touchesConfig: Boolean(prContext.touchesConfig),
+        touchesInfra: Boolean(prContext.touchesInfra),
+        touchesApi: Boolean(prContext.touchesApi),
+        hasBreakingChange: Boolean(prContext.hasBreakingChange),
+        hasSecurityRelevant: Boolean(prContext.hasSecurityRelevant),
+        hasDependencyUpdate: Boolean(prContext.hasDependencyUpdate),
+      },
+    };
+  }
+
   private async classifySignal(
     context: SignalContext,
     model: BaseChatModel,
@@ -606,17 +752,40 @@ export class GraphsFactory {
       },
     );
 
-    const systemPrompt = `You are an expert at analyzing software development signals (PRs, tickets, messages) and classifying them for a project management assistant.
+    const systemPrompt = `You are an expert at analyzing software development signals (PRs, tickets, messages) for a PM assistant called Linea.
 
-Analyze the provided signal and return a structured classification with:
-1. Blocker Analysis - Is this blocking progress? What type of blocker?
-2. Drift Analysis - Is there scope creep, priority changes, or staleness?
-3. Update Analysis - Is this a significant update worth notifying about?
-4. Quality Analysis - For PRs, are there quality concerns?
-5. Classification - What category does this fall into? How important is it?
-6. Memory Suggestions - What should we remember about this?
+Your job is to help PMs stay on top of what matters by detecting:
+1. **Blockers** - Anything preventing progress. Look for:
+   - Explicit blocker mentions ("blocked by", "waiting on", "can't proceed")
+   - Dependencies that aren't resolved
+   - Missing requirements or decisions
+   - Urgent/critical priority items that haven't moved
 
-Be precise and use evidence from the text to support your classifications.`;
+2. **Drift** - Changes that might derail plans:
+   - Scope changes or feature creep
+   - Priority changes without explanation
+   - Work that's been "in progress" too long (stalled)
+   - Timeline slips
+
+3. **Significant Updates** - Things the PM should know:
+   - Important decisions made
+   - Major progress on key features
+   - New risks or concerns raised
+   - Team dynamics issues
+
+4. **Quality Concerns** (for PRs):
+   - Security implications
+   - Breaking changes
+   - Missing tests
+   - Large/risky changes
+
+Return structured analysis with evidence. Be aggressive about detecting blockers - it's better to flag something that turns out fine than to miss a real blocker.
+
+For memory suggestions, focus on things that provide future context:
+- Decisions and their rationale
+- Who owns what
+- Blockers and how they were resolved
+- Team preferences and patterns`;
 
     const userPrompt = `Analyze this ${context.source} ${context.eventType} signal:
 

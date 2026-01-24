@@ -11,6 +11,7 @@ import { CacheIndicator } from './health/cache.indicator';
 import { PaginationService } from './utils';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { EventbusModule } from './eventbus/eventbus.module';
+import { JobsModule } from './jobs/jobs.module';
 import { DataLoaderInterceptor } from './dataloader';
 
 @Global()
@@ -20,6 +21,7 @@ import { DataLoaderInterceptor } from './dataloader';
     RedisModule,
     EventbusModule,
     AnalyticsModule,
+    JobsModule,
     TerminusModule.forRoot({
       gracefulShutdownTimeoutMs: parseInt(
         process.env['GRACEFUL_SHUTDOWN_TIMEOUT_MS'] || '0',
@@ -54,6 +56,7 @@ import { DataLoaderInterceptor } from './dataloader';
     EventbusModule,
     PaginationService,
     AnalyticsModule,
+    JobsModule,
   ],
 })
 export class CommonModule {}

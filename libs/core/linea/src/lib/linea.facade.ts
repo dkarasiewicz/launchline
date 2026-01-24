@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ReactAgent } from 'langchain';
 import { LINEA_AGENT } from './tokens';
 import { MemoryService, GraphsFactory } from './services';
+import { AssistantService } from './assistant.service';
 import type {
   GraphContext,
   SourceType,
@@ -10,6 +11,9 @@ import type {
   MemorySearchQuery,
   ProcessWebhookInput,
   ProcessWebhookResult,
+  InboxItemCandidate,
+  InboxItemType,
+  InboxPriority,
 } from './types';
 
 @Injectable()
@@ -21,15 +25,28 @@ export class LineaFacade {
     private readonly agent: ReactAgent,
     private readonly memoryService: MemoryService,
     private readonly graphsFactory: GraphsFactory,
+    private readonly assistantService: AssistantService,
   ) {}
+
+  private buildGraphConfig(ctx: GraphContext) {
+    return {
+      configurable: {
+        thread_id: ctx.threadId ?? ctx.correlationId,
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+      },
+    };
+  }
 
   async processWebhook(
     input: ProcessWebhookInput,
   ): Promise<ProcessWebhookResult> {
+    const correlationId = `webhook-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const ctx: GraphContext = {
       workspaceId: input.workspaceId,
       userId: input.userId,
-      correlationId: `webhook-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      correlationId,
+      threadId: correlationId,
     };
 
     const rawEvent: RawEvent = {
@@ -48,12 +65,15 @@ export class LineaFacade {
 
     // 1. Ingestion: Normalize raw events
     const ingestionGraph = this.graphsFactory.getIngestionGraph();
-    const ingestionResult = await ingestionGraph.invoke({
-      workspaceId: ctx.workspaceId,
-      userId: ctx.userId,
-      correlationId: ctx.correlationId,
-      rawEvents: [rawEvent],
-    });
+    const ingestionResult = await ingestionGraph.invoke(
+      {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        rawEvents: [rawEvent],
+      },
+      this.buildGraphConfig(ctx),
+    );
 
     const normalizedEvents = ingestionResult.normalizedEvents;
 
@@ -71,12 +91,15 @@ export class LineaFacade {
 
     // 2. Classification: Classify and create memories
     const classificationGraph = this.graphsFactory.getClassificationGraph();
-    const classificationResult = await classificationGraph.invoke({
-      workspaceId: ctx.workspaceId,
-      userId: ctx.userId,
-      correlationId: ctx.correlationId,
-      normalizedEvents,
-    });
+    const classificationResult = await classificationGraph.invoke(
+      {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        normalizedEvents,
+      },
+      this.buildGraphConfig(ctx),
+    );
 
     const memoriesCreated = classificationResult.memoriesCreated;
     const classifications = classificationResult.classifications;
@@ -120,13 +143,16 @@ export class LineaFacade {
 
     // 4. Inbox Generation
     const inboxGraph = this.graphsFactory.getInboxGraph();
-    const inboxResult = await inboxGraph.invoke({
-      workspaceId: ctx.workspaceId,
-      userId: ctx.userId,
-      correlationId: ctx.correlationId,
-      signalContexts,
-      classifications,
-    });
+    const inboxResult = await inboxGraph.invoke(
+      {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        signalContexts,
+        classifications,
+      },
+      this.buildGraphConfig(ctx),
+    );
 
     const inboxItems = inboxResult.inboxCandidates;
 
@@ -148,10 +174,12 @@ export class LineaFacade {
       payload: Record<string, unknown>;
     }>,
   ): Promise<ProcessWebhookResult> {
+    const correlationId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const ctx: GraphContext = {
       workspaceId,
       userId,
-      correlationId: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      correlationId,
+      threadId: correlationId,
     };
 
     // Create raw events
@@ -167,12 +195,15 @@ export class LineaFacade {
 
     // Run through pipeline
     const ingestionGraph = this.graphsFactory.getIngestionGraph();
-    const ingestionResult = await ingestionGraph.invoke({
-      workspaceId: ctx.workspaceId,
-      userId: ctx.userId,
-      correlationId: ctx.correlationId,
-      rawEvents,
-    });
+    const ingestionResult = await ingestionGraph.invoke(
+      {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        rawEvents,
+      },
+      this.buildGraphConfig(ctx),
+    );
 
     const normalizedEvents = ingestionResult.normalizedEvents;
 
@@ -181,12 +212,15 @@ export class LineaFacade {
     }
 
     const classificationGraph = this.graphsFactory.getClassificationGraph();
-    const classificationResult = await classificationGraph.invoke({
-      workspaceId: ctx.workspaceId,
-      userId: ctx.userId,
-      correlationId: ctx.correlationId,
-      normalizedEvents,
-    });
+    const classificationResult = await classificationGraph.invoke(
+      {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        normalizedEvents,
+      },
+      this.buildGraphConfig(ctx),
+    );
 
     const signalContexts = normalizedEvents.map((event) => ({
       signalId: event.id,
@@ -216,13 +250,16 @@ export class LineaFacade {
     }));
 
     const inboxGraph = this.graphsFactory.getInboxGraph();
-    const inboxResult = await inboxGraph.invoke({
-      workspaceId: ctx.workspaceId,
-      userId: ctx.userId,
-      correlationId: ctx.correlationId,
-      signalContexts,
-      classifications: classificationResult.classifications,
-    });
+    const inboxResult = await inboxGraph.invoke(
+      {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        signalContexts,
+        classifications: classificationResult.classifications,
+      },
+      this.buildGraphConfig(ctx),
+    );
 
     return {
       normalizedEvents,
@@ -260,5 +297,45 @@ export class LineaFacade {
     return this.agent.getState({
       configurable: { thread_id: threadId },
     });
+  }
+
+  async createInboxThread(input: {
+    workspaceId: string;
+    userId: string;
+    type: InboxItemType;
+    priority: InboxPriority;
+    title: string;
+    summary: string;
+    suggestedActions: string[];
+    sourceMemoryIds: string[];
+    entityRefs: {
+      ticketIds?: string[];
+      prIds?: string[];
+      userIds?: string[];
+      teamIds?: string[];
+    };
+    sessionId?: string;
+  }): Promise<{ remoteId: string }> {
+    const candidate: InboxItemCandidate = {
+      id: `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      workspaceId: input.workspaceId,
+      type: input.type,
+      priority: input.priority,
+      title: input.title,
+      summary: input.summary,
+      confidence: 1,
+      sourceMemoryIds: input.sourceMemoryIds,
+      suggestedActions: input.suggestedActions,
+      requiresApproval: false,
+      entityRefs: input.entityRefs,
+      createdAt: new Date(),
+    };
+
+    return this.assistantService.createInboxThread(
+      input.workspaceId,
+      input.userId,
+      candidate,
+      input.sessionId,
+    );
   }
 }

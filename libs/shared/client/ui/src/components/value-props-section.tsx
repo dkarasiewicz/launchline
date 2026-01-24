@@ -3,22 +3,22 @@ import { Code2, Users, Building2, Target } from 'lucide-react';
 const reasons = [
   {
     icon: Code2,
-    text: 'For developers: See how your work shapes the product - even without shipping features',
+    text: 'For developers: Make invisible impact visible without busywork metrics',
     accent: 'text-accent',
   },
   {
     icon: Users,
-    text: 'For teams: Highlight underdeveloped areas and frequent pain points',
+    text: 'For teams: Surface strengths, gaps, and collaboration patterns from real signals',
     accent: 'text-status-info',
   },
   {
     icon: Building2,
-    text: 'For organizations: Understand how small actions compound into outcomes',
+    text: 'For organizations: Get a 24/7 product copilot that never misses context',
     accent: 'text-status-success',
   },
   {
     icon: Target,
-    text: 'For managers: Get clarity without surveillance',
+    text: 'For managers: Clarity with guardrails - no surveillance required',
     accent: 'text-accent',
   },
 ];
@@ -31,7 +31,7 @@ export function ValuePropsSection() {
           Why it matters
         </p>
         <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground mb-8">
-          Organize around people's strengths - not arbitrary processes
+          Make strengths and gaps explicit without surveillance
         </h2>
 
         <div className="grid sm:grid-cols-2 gap-3">

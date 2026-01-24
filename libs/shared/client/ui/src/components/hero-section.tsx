@@ -17,21 +17,20 @@ export function HeroSection() {
         </div>
 
         <h1 className="text-4xl md:text-6xl font-medium tracking-tight text-foreground leading-[1.1] mb-6">
-          Transparency without
+          The product copilot
           <br />
-          <span className="text-accent">micromanagement</span>
+          <span className="text-accent">that runs 24/7</span>
         </h1>
 
         <p className="text-lg text-muted-foreground max-w-xl mx-auto mb-8 leading-relaxed">
-          Launchline helps teams see what's{' '}
-          <em className="text-accent not-italic">actually</em> happening - not
-          what fits in spreadsheets. Surface hidden impact, respect context,
-          embrace different working styles.
+          Launchline is a Slack-first, autonomous coworker that keeps Linear
+          authoritative, builds a live collaboration graph, and runs scheduled
+          check-ins so blockers and drift never hide.
         </p>
 
         <p className="text-sm text-muted-foreground/80 mb-12">
-          Impact without fake KPIs.{' '}
-          <span className="text-foreground/80">Finally.</span>
+          Transparent by default. Learns your team&apos;s playbooks and takes
+          safe actions inside a sandbox.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -40,7 +39,7 @@ export function HeroSection() {
               size="lg"
               className="h-11 px-6 text-sm bg-foreground text-background hover:bg-foreground/90 border-0 transition-all"
             >
-              See Inbox in action
+              See the inbox in action
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </Link>

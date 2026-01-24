@@ -4,18 +4,18 @@ const steps = [
   {
     step: '01',
     icon: Eye,
-    title: 'Observe',
+    title: 'Connect',
     description:
-      'Connects to Linear, Slack, and GitHub. Watches your work in real time.',
+      'Slack-first: connect Slack, Linear, and Google. Linea listens where your team already works.',
     accent: 'text-status-info',
     bg: 'bg-status-info/15',
   },
   {
     step: '02',
     icon: Inbox,
-    title: 'Surface',
+    title: 'Understand',
     description:
-      'Blockers and decisions appear in your inbox with context and actions.',
+      'Builds a collaboration graph, learns your playbooks, and spots drift automatically.',
     accent: 'text-accent',
     bg: 'bg-accent/15',
   },
@@ -24,7 +24,7 @@ const steps = [
     icon: Zap,
     title: 'Act',
     description:
-      'One click to update tickets, ping teammates, or reprioritize work.',
+      'Schedule jobs or approve actions. Linea runs safely in a sandbox.',
     accent: 'text-status-success',
     bg: 'bg-status-success/15',
   },
@@ -39,7 +39,7 @@ export function HowItWorksSection() {
             How it works
           </p>
           <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground">
-            Three steps to transparency
+            Three steps to an always-on copilot
           </h2>
         </div>
 

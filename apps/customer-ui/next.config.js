@@ -53,6 +53,10 @@ const nextConfig = {
         source: '/assistant/:path*',
         destination: `${backendUrl}/assistant/:path*`,
       },
+      {
+        source: '/integrations/:path*',
+        destination: `${backendUrl}/integrations/:path*`,
+      },
     ];
   },
 };

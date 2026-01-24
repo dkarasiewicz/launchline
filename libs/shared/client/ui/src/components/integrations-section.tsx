@@ -2,16 +2,22 @@ import { ArrowRight, Zap } from 'lucide-react';
 
 const integrations = [
   {
-    name: 'Linear',
-    description: 'Bidirectional sync of tickets, blockers, and status changes',
-    color: 'bg-status-info',
-    features: ['Ticket sync', 'Blocker detection', 'Status updates'],
+    name: 'Slack',
+    description: 'Primary interface for Linea - DMs, mentions, and digests',
+    color: 'bg-accent',
+    features: ['DM + @mention support', 'Standup digests', 'Thread context'],
   },
   {
-    name: 'Slack',
-    description: 'Context from standups, threads, and @mentions',
-    color: 'bg-accent',
-    features: ['Standup parsing', 'Thread context', 'Notifications'],
+    name: 'Linear',
+    description: 'Authoritative source for tickets, projects, and priorities',
+    color: 'bg-status-info',
+    features: ['Ticket sync', 'Project context', 'Priority changes'],
+  },
+  {
+    name: 'Google',
+    description: 'Gmail + Calendar signals for stakeholder context',
+    color: 'bg-status-warning',
+    features: ['Email signals', 'Meeting prep', 'Follow-up actions'],
   },
   {
     name: 'GitHub',
@@ -33,16 +39,15 @@ export function IntegrationsSection() {
               Integrations
             </p>
             <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground">
-              Works with the tools you already use
+              Slack-first, connected to your stack
             </h2>
           </div>
           <p className="text-sm text-muted-foreground md:text-right max-w-xs">
-            We collect signals across your tools and turn them into insights
-            about real impact.
+            Linea lives in Slack and pulls context from Linear, Google, and GitHub.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 mb-8">
+        <div className="grid md:grid-cols-4 gap-4 mb-8">
           {integrations.map((integration) => (
             <div
               key={integration.name}

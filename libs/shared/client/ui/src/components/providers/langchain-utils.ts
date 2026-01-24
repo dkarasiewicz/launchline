@@ -144,14 +144,73 @@ function createHumanMessage(rest: Record<string, unknown>): HumanMessage {
 }
 
 function createAIMessage(rest: Record<string, unknown>): AIMessage {
-  const { tool_calls: rawToolCalls, ...other } = rest;
+  const {
+    tool_calls: rawToolCalls,
+    tool_call_chunks: rawToolCallChunks,
+    additional_kwargs,
+    ...other
+  } = rest;
+  const nestedToolCalls = (
+    additional_kwargs as Record<string, unknown> | undefined
+  )?.['tool_calls'];
 
-  if (!Array.isArray(rawToolCalls)) {
+  let toolCallList = Array.isArray(rawToolCalls)
+    ? rawToolCalls
+    : Array.isArray(nestedToolCalls)
+      ? nestedToolCalls
+      : null;
+
+  if (!toolCallList && Array.isArray(rawToolCallChunks)) {
+    const aggregated = new Map<
+      string,
+      { id: string; name: string; args: string }
+    >();
+
+    for (const chunk of rawToolCallChunks) {
+      if (!chunk || typeof chunk !== 'object') continue;
+      const entry = chunk as { id?: string; name?: string; args?: unknown };
+      if (!entry.id) continue;
+
+      const existing = aggregated.get(entry.id) ?? {
+        id: entry.id,
+        name: entry.name ?? 'tool',
+        args: '',
+      };
+
+      const nextArgs = typeof entry.args === 'string' ? entry.args : '';
+      existing.name = entry.name ?? existing.name;
+      existing.args = `${existing.args}${nextArgs}`;
+      aggregated.set(entry.id, existing);
+    }
+
+    if (aggregated.size > 0) {
+      toolCallList = Array.from(aggregated.values()).map((call) => ({
+        id: call.id,
+        name: call.name,
+        args: (() => {
+          if (!call.args) return {};
+          try {
+            return JSON.parse(call.args);
+          } catch {
+            return { raw: call.args };
+          }
+        })(),
+        type: 'tool_call',
+      }));
+    }
+  }
+
+  if (!toolCallList) {
     return { ...rest, type: 'ai' } as AIMessage;
   }
 
-  const tool_calls = rawToolCalls.map(coerceToolCall) as ToolCall[];
-  return { ...other, type: 'ai', tool_calls } as AIMessage;
+  const tool_calls = toolCallList.map(coerceToolCall) as ToolCall[];
+  return {
+    ...other,
+    type: 'ai',
+    tool_calls,
+    additional_kwargs,
+  } as AIMessage;
 }
 
 function createSystemMessage(rest: Record<string, unknown>): SystemMessage {

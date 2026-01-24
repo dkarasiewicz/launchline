@@ -2,24 +2,26 @@ import { Inbox, Brain, Sparkles, ChevronRight } from 'lucide-react';
 
 const stages = [
   {
-    label: 'Today',
-    title: 'Execution inbox',
-    description: 'Captures blockers, risks, and decisions across tools.',
+    label: 'Now',
+    title: 'Slack-native execution inbox',
+    description:
+      'Heartbeat + scheduled jobs that surface blockers, drift, and risks in real time.',
     icon: Inbox,
     active: true,
   },
   {
-    label: 'Next',
-    title: 'Product memory',
+    label: 'Scaling',
+    title: 'Autonomous coworker',
     description:
-      'Understands how your team, product, and users behave over time.',
+      'Learns each workspace, builds a collaboration graph, and acts with guardrails.',
     icon: Brain,
     active: false,
   },
   {
-    label: 'Eventually',
+    label: 'Endgame',
     title: 'Product copilot',
-    description: 'Helps steer priorities and tradeoffs - grounded in reality.',
+    description:
+      'Makes strengths, gaps, and tradeoffs visible so teams ship with clarity.',
     icon: Sparkles,
     active: false,
   },
@@ -35,19 +37,17 @@ export function VisionSection() {
             The bigger picture
           </p>
           <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground mb-6">
-            Product work is becoming too complex
+            Product teams are drowning in context
             <br />
-            <span className="text-muted-foreground">for humans alone</span>
+            <span className="text-muted-foreground">
+              Linea keeps it coherent, 24/7
+            </span>
           </h2>
           <p className="text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Products today are built across dozens of tools, teams, and
-            decisions. PMs are expected to keep everything aligned - but the
-            system itself doesn't learn. Launchline is building the missing
-            layer: a product copilot that understands{' '}
-            <span className="text-accent">context</span>,{' '}
-            <span className="text-status-info">history</span>, and{' '}
-            <span className="text-status-success">tradeoffs</span> - not just
-            tickets.
+            We are building a product copilot: an always-on agent that connects
+            Linear, Slack, GitHub, and email into a live collaboration graph.
+            It schedules check-ins, remembers your playbooks, and takes safe
+            actions in a sandbox. No dashboards — just clarity.
           </p>
         </div>
 
@@ -128,10 +128,7 @@ export function VisionSection() {
         {/* Anchor back to today */}
         <div className="mt-12 text-center">
           <p className="text-sm text-muted-foreground/80 leading-relaxed">
-            We start where the pain is highest:{' '}
-            <span className="text-muted-foreground">
-              execution. See context → understand impact → ship with confidence.
-            </span>
+            Start with execution, then scale into a 24/7 product copilot.
           </p>
         </div>
       </div>

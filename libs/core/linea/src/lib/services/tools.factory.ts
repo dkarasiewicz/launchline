@@ -1,29 +1,63 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type StructuredToolInterface, tool } from '@langchain/core/tools';
 import { RunnableConfig } from '@langchain/core/runnables';
+import { TavilySearch } from '@langchain/tavily';
 import { Command } from '@langchain/langgraph';
-import { ToolMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { MemoryService } from './memory.service';
-import { LINEA_STORE } from '../tokens';
+import { LinearSkillsFactory } from './linear-skills.factory';
+import { LINEA_MODEL_FAST, LINEA_STORE } from '../tokens';
 import { PostgresStore } from '@langchain/langgraph-checkpoint-postgres/store';
 import {
+  IntegrationFacade,
+  IntegrationType,
+  GoogleService,
+  GitHubService,
+  SlackService,
+  type GmailMessageSummary,
+  type CalendarEventSummary,
+} from '@launchline/core-integration';
+import {
   CreateGitHubIssueInputSchema,
+  GetGitHubPullRequestsInputSchema,
+  GetGitHubPullRequestDetailsInputSchema,
+  GetGitHubIssuesInputSchema,
+  SearchGitHubIssuesInputSchema,
+  GetGitHubCommitsInputSchema,
+  GenerateProjectUpdateInputSchema,
   GetBlockersInputSchema,
   GetDecisionsInputSchema,
   GetInboxItemsInputSchema,
+  GetLatestEmailsInputSchema,
+  GetCalendarEventsInputSchema,
+  GetTeamInsightsInputSchema,
   GetWorkspaceStatusInputSchema,
   type GraphContext,
   InternetSearchInputSchema,
+  LogDecisionInputSchema,
   type MemoryCategory,
   type MemoryNamespace,
   ResolveIdentityInputSchema,
+  ScheduleStandupDigestInputSchema,
+  RunSandboxCommandInputSchema,
+  ScheduleCalendarEventInputSchema,
+  ScheduleTaskInputSchema,
   SaveMemoryInputSchema,
   SearchMemoriesInputSchema,
   SendSlackMessageInputSchema,
+  ReplyToEmailInputSchema,
+  SummarizeSlackChannelInputSchema,
   ThinkInputSchema,
   UpdateLinearTicketInputSchema,
+  GetWorkspacePromptInputSchema,
+  UpdateWorkspacePromptInputSchema,
 } from '../types';
 import { TOOL_DESCRIPTIONS } from '../prompts';
+import { LineaJobsService } from '../jobs/linea-jobs.service';
+import { AgentPromptService } from './agent-prompt.service';
+import { TeamInsightsService } from './team-insights.service';
+import { SandboxService } from './sandbox.service';
 
 function getWorkspaceId(config: RunnableConfig): string {
   const configurable = config?.configurable as
@@ -37,6 +71,13 @@ function getUserId(config: RunnableConfig): string {
     | Record<string, unknown>
     | undefined;
   return (configurable?.['userId'] as string) || 'unknown';
+}
+
+function getThreadId(config: RunnableConfig): string | undefined {
+  const configurable = config?.configurable as
+    | Record<string, unknown>
+    | undefined;
+  return configurable?.['thread_id'] as string | undefined;
 }
 
 function getToolCallId(config: RunnableConfig): string {
@@ -55,74 +96,282 @@ function createContext(config: RunnableConfig): GraphContext {
   };
 }
 
+async function getIntegrationToken(
+  integrationFacade: IntegrationFacade,
+  workspaceId: string,
+  type: IntegrationType,
+): Promise<string | null> {
+  const integrations = await integrationFacade.getIntegrationsByType(
+    workspaceId,
+    type,
+  );
+
+  if (!integrations.length) {
+    return null;
+  }
+
+  return integrationFacade.getAccessToken(integrations[0].id);
+}
+
 @Injectable()
 export class ToolsFactory {
   private readonly logger = new Logger(ToolsFactory.name);
 
   constructor(
     private readonly memoryService: MemoryService,
+    private readonly linearSkillsFactory: LinearSkillsFactory,
+    private readonly integrationFacade: IntegrationFacade,
+    private readonly slackService: SlackService,
+    private readonly googleService: GoogleService,
+    private readonly githubService: GitHubService,
+    private readonly lineaJobsService: LineaJobsService,
+    private readonly agentPromptService: AgentPromptService,
+    private readonly teamInsightsService: TeamInsightsService,
+    private readonly sandboxService: SandboxService,
+    @Inject(LINEA_MODEL_FAST)
+    private readonly modelFast: BaseChatModel,
     @Inject(LINEA_STORE)
     private readonly store: PostgresStore,
   ) {}
 
   createAllTools(): StructuredToolInterface[] {
     return [
-      // Memory tools
+      ...this.createMemoryTools(),
+      ...this.createInboxTools(),
+      ...this.linearSkillsFactory.createLinearSkills(),
+      ...this.createGitHubTools(),
+      ...this.createProjectUpdateTools(),
+      ...this.createActionTools(),
+      ...this.createSearchTools(),
+      ...this.createUtilityTools(),
+    ];
+  }
+
+  private createMemoryTools(): StructuredToolInterface[] {
+    return [
       this.createSearchMemoriesTool(),
       this.createSaveMemoryTool(),
       this.createGetBlockersTool(),
       this.createGetDecisionsTool(),
       this.createResolveIdentityTool(),
-      // Inbox tools
-      this.createGetInboxItemsTool(),
-      this.createGetWorkspaceStatusTool(),
-      // Action tools (require approval)
-      this.createUpdateLinearTicketTool(),
-      this.createSendSlackMessageTool(),
-      this.createCreateGitHubIssueTool(),
-      // Search tools
-      this.createInternetSearchTool(),
-      // Utility tools
-      this.createThinkTool(),
+      this.createLogDecisionTool(),
+      this.createGetTeamInsightsTool(),
+      this.createGetWorkspacePromptTool(),
+      this.createUpdateWorkspacePromptTool(),
     ];
   }
 
+  private createInboxTools(): StructuredToolInterface[] {
+    return [this.createGetInboxItemsTool(), this.createGetWorkspaceStatusTool()];
+  }
+
+  private createActionTools(): StructuredToolInterface[] {
+    return [
+      this.createUpdateLinearTicketTool(),
+      this.createSendSlackMessageTool(),
+      this.createReplyToEmailTool(),
+      this.createScheduleCalendarEventTool(),
+      this.createCreateGitHubIssueTool(),
+    ];
+  }
+
+  private createProjectUpdateTools(): StructuredToolInterface[] {
+    return [this.createGenerateProjectUpdateTool()];
+  }
+
+  private createSearchTools(): StructuredToolInterface[] {
+    return [
+      this.createInternetSearchTool(),
+      this.createSummarizeSlackChannelTool(),
+      this.createGetLatestEmailsTool(),
+      this.createGetCalendarEventsTool(),
+    ];
+  }
+
+  private createGitHubTools(): StructuredToolInterface[] {
+    return [
+      this.createGetGitHubPullRequestsTool(),
+      this.createGetGitHubPullRequestDetailsTool(),
+      this.createGetGitHubIssuesTool(),
+      this.createSearchGitHubIssuesTool(),
+      this.createGetGitHubCommitsTool(),
+    ];
+  }
+
+  private createUtilityTools(): StructuredToolInterface[] {
+    return [
+      this.createThinkTool(),
+      this.createScheduleTaskTool(),
+      this.createScheduleStandupDigestTool(),
+      this.createRunSandboxCommandTool(),
+    ];
+  }
+
+  private createRunSandboxCommandTool(): StructuredToolInterface {
+    const sandboxService = this.sandboxService;
+    const logger = this.logger;
+
+    return tool(
+      async ({ command, timeoutMs, image }, config) => {
+        const workspaceId = getWorkspaceId(config);
+
+        try {
+          const result = await sandboxService.runCommand({
+            workspaceId,
+            command,
+            timeoutMs,
+            image,
+          });
+
+          return JSON.stringify(result);
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Failed to run sandbox command',
+          );
+
+          return JSON.stringify({
+            output: error instanceof Error ? error.message : 'Sandbox error',
+            exitCode: null,
+            durationMs: 0,
+            truncated: false,
+          });
+        }
+      },
+      {
+        name: 'run_sandbox_command',
+        description: TOOL_DESCRIPTIONS.runSandboxCommand,
+        schema: RunSandboxCommandInputSchema,
+      },
+    );
+  }
+
+  private createScheduleTaskTool(): StructuredToolInterface {
+    const jobsService = this.lineaJobsService;
+    const logger = this.logger;
+
+    return tool(
+      async (
+        {
+          task,
+          runAt,
+          cron,
+          timezone,
+          mode = 'suggest',
+          name,
+          deliverToInbox,
+          replyToThreadId,
+        },
+        config,
+      ) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+        const currentThreadId = getThreadId(config);
+        const resolvedReplyToThreadId =
+          replyToThreadId ||
+          (deliverToInbox === false ? currentThreadId : undefined);
+        const resolvedMode = mode === 'execute' ? 'execute' : 'suggest';
+        const resolvedDeliverToInbox =
+          deliverToInbox ??
+          (!resolvedReplyToThreadId && resolvedMode !== 'execute');
+
+        let runAtDate: Date | undefined;
+        if (runAt) {
+          runAtDate = new Date(runAt);
+          if (Number.isNaN(runAtDate.getTime())) {
+            return 'Invalid runAt timestamp. Provide an ISO 8601 datetime.';
+          }
+        }
+
+        try {
+          const result = await jobsService.scheduleTask({
+            workspaceId,
+            userId,
+            task,
+            runAt: runAtDate,
+            cron,
+            timezone,
+            mode: resolvedMode,
+            name,
+            deliverToInbox: resolvedDeliverToInbox,
+            replyToThreadId: resolvedReplyToThreadId,
+          });
+
+          if (result.cron) {
+            return `Scheduled recurring task (${result.jobId}) with cron: ${result.cron}.`;
+          }
+
+          if (result.runAt) {
+            return `Scheduled task (${result.jobId}) for ${result.runAt.toISOString()}.`;
+          }
+
+          return `Scheduled task (${result.jobId}).`;
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, userId },
+            'Failed to schedule task',
+          );
+
+          return `Failed to schedule task: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'schedule_task',
+        description: TOOL_DESCRIPTIONS.scheduleTask,
+        schema: ScheduleTaskInputSchema,
+      },
+    );
+  }
+
   private createSearchMemoriesTool() {
-    const store = this.store;
+    const memoryService = this.memoryService;
     const logger = this.logger;
 
     return tool(
       async ({ query, namespace, limit = 10 }, config) => {
         const workspaceId = getWorkspaceId(config);
-        const searchNamespace = namespace
-          ? ['workspaces', workspaceId, namespace]
-          : ['workspaces', workspaceId];
 
         try {
-          const results = await store.search(searchNamespace, { query, limit });
+          const results = await memoryService.searchMemories({
+            workspaceId,
+            namespaces: namespace ? [namespace] : undefined,
+            query,
+            limit,
+          });
 
-          if (!results || results.length === 0) {
-            return 'No memories found matching your query.';
-          }
+          const memories = results.map((memory) => {
+            const createdAt =
+              memory.createdAt instanceof Date
+                ? memory.createdAt
+                : new Date(memory.createdAt);
+            const timestamp = Number.isNaN(createdAt.valueOf())
+              ? new Date().toISOString()
+              : createdAt.toISOString();
 
-          return results
-            .map((item: { value: Record<string, unknown> }, i: number) => {
-              const memory = item.value;
-              const ns = memory['namespace'] || 'unknown';
-              const cat = memory['category'] || 'general';
-              const summary =
-                memory['summary'] || memory['content'] || 'No content';
-              const importance =
-                typeof memory['importance'] === 'number'
-                  ? (memory['importance'] as number).toFixed(2)
-                  : 'N/A';
-              return `${i + 1}. [${ns}/${cat}] ${summary}\n   Importance: ${importance}`;
-            })
-            .join('\n\n');
+            return {
+              id: memory.id,
+              content: memory.summary || memory.content,
+              category: memory.category,
+              namespace: memory.namespace,
+              importance: memory.importance,
+              timestamp,
+            };
+          });
+
+          return JSON.stringify({ memories });
         } catch (error) {
-          logger.error('[searchMemories] Error:', error);
+          logger.error(
+            { err: error, workspaceId, query, namespace, limit },
+            'Search memories failed',
+          );
 
-          return `Error searching memories: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          return JSON.stringify({
+            memories: [],
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unknown error searching memories',
+          });
         }
       },
       {
@@ -174,7 +423,16 @@ export class ToolsFactory {
             },
           });
         } catch (error) {
-          logger.error('[saveMemory] Error:', error);
+          logger.error(
+            {
+              err: error,
+              workspaceId: ctx.workspaceId,
+              namespace,
+              category,
+              entityId,
+            },
+            'Save memory failed',
+          );
           return `Error saving memory: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -183,6 +441,147 @@ export class ToolsFactory {
         description:
           'Save important information to workspace memory for future reference.',
         schema: SaveMemoryInputSchema,
+      },
+    );
+  }
+
+  private createLogDecisionTool() {
+    const memoryService = this.memoryService;
+    const logger = this.logger;
+
+    return tool(
+      async (
+        { title, decision, rationale, impact, relatedTicketIds, importance },
+        config,
+      ) => {
+        const ctx = createContext(config);
+
+        const contentLines = [
+          `Decision: ${decision}`,
+          rationale ? `Rationale: ${rationale}` : null,
+          impact ? `Impact: ${impact}` : null,
+          relatedTicketIds?.length
+            ? `Related tickets: ${relatedTicketIds.join(', ')}`
+            : null,
+        ].filter(Boolean) as string[];
+
+        try {
+          const memory = await memoryService.saveMemory(ctx, {
+            namespace: 'decision',
+            category: 'decision',
+            content: contentLines.join('\n'),
+            summary: title,
+            importance: importance ?? 0.6,
+            confidence: 1,
+            sourceEventIds: [],
+            relatedEntityIds: relatedTicketIds ?? [],
+            relatedMemoryIds: [],
+            entityRefs: {
+              ticketIds: relatedTicketIds ?? undefined,
+            },
+          });
+
+          return `Decision logged: ${memory.id}`;
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId: ctx.workspaceId },
+            'Log decision failed',
+          );
+          return `Error logging decision: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'log_decision',
+        description: TOOL_DESCRIPTIONS.logDecision,
+        schema: LogDecisionInputSchema,
+      },
+    );
+  }
+
+  private createGetTeamInsightsTool() {
+    const teamInsightsService = this.teamInsightsService;
+    const logger = this.logger;
+
+    return tool(
+      async ({ focus, limit = 200 }, config) => {
+        const workspaceId = getWorkspaceId(config);
+
+        try {
+          const graph = await teamInsightsService.buildTeamGraph(
+            workspaceId,
+            limit,
+          );
+
+          return teamInsightsService.summarizeTeam(graph, focus);
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Get team insights failed',
+          );
+          return `Error generating team insights: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'get_team_insights',
+        description: TOOL_DESCRIPTIONS.getTeamInsights,
+        schema: GetTeamInsightsInputSchema,
+      },
+    );
+  }
+
+  private createGetWorkspacePromptTool() {
+    const promptService = this.agentPromptService;
+
+    return tool(
+      async (_, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const record = await promptService.getWorkspacePromptRecord(
+          workspaceId,
+        );
+
+        if (!record) {
+          return 'No workspace instructions found yet.';
+        }
+
+        return `Workspace instructions (v${record.version}, updated ${record.updatedAt}):\n${record.prompt}`;
+      },
+      {
+        name: 'get_workspace_prompt',
+        description: TOOL_DESCRIPTIONS.getWorkspacePrompt,
+        schema: GetWorkspacePromptInputSchema,
+      },
+    );
+  }
+
+  private createUpdateWorkspacePromptTool() {
+    const promptService = this.agentPromptService;
+    const logger = this.logger;
+
+    return tool(
+      async ({ prompt }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+
+        try {
+          const record = await promptService.upsertWorkspacePrompt(
+            workspaceId,
+            prompt,
+            userId,
+          );
+
+          return `Workspace instructions updated to v${record.version}.`;
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Update workspace prompt failed',
+          );
+          return `Error updating workspace instructions: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'update_workspace_prompt',
+        description: TOOL_DESCRIPTIONS.updateWorkspacePrompt,
+        schema: UpdateWorkspacePromptInputSchema,
       },
     );
   }
@@ -212,7 +611,10 @@ export class ToolsFactory {
             })
             .join('\n');
         } catch (error) {
-          logger.error('[getBlockers] Error:', error);
+          logger.error(
+            { err: error, workspaceId, limit },
+            'Get blockers failed',
+          );
           return `Error getting blockers: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -246,7 +648,10 @@ export class ToolsFactory {
             .map((d, i) => `${i + 1}. ${d.summary || d.content}`)
             .join('\n');
         } catch (error) {
-          logger.error('[getDecisions] Error:', error);
+          logger.error(
+            { err: error, workspaceId, limit },
+            'Get decisions failed',
+          );
           return `Error getting decisions: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -321,7 +726,10 @@ export class ToolsFactory {
 
           return `No linked identity found for "${name}".`;
         } catch (error) {
-          logger.error('[resolveIdentity] Error:', error);
+          logger.error(
+            { err: error, workspaceId, identity: name || null },
+            'Resolve identity failed',
+          );
           return `Error resolving identity: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -374,7 +782,10 @@ export class ToolsFactory {
             })
             .join('\n\n');
         } catch (error) {
-          logger.error('[getInboxItems] Error:', error);
+          logger.error(
+            { err: error, workspaceId, type, priority, limit },
+            'Get inbox items failed',
+          );
           return `Error fetching inbox items: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -427,7 +838,10 @@ export class ToolsFactory {
 
           return status;
         } catch (error) {
-          logger.error('[getWorkspaceStatus] Error:', error);
+          logger.error(
+            { err: error, workspaceId, includeMetrics },
+            'Get workspace status failed',
+          );
           return `Error getting workspace status: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -436,6 +850,85 @@ export class ToolsFactory {
         description:
           'Get an overview of workspace status including blockers, inbox items, and recent decisions.',
         schema: GetWorkspaceStatusInputSchema,
+      },
+    );
+  }
+
+  private createGenerateProjectUpdateTool() {
+    const model = this.modelFast;
+    const logger = this.logger;
+
+    return tool(
+      async ({ projectId, timeRange, format, audience }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const normalizedTimeRange = timeRange || 'this week';
+        const normalizedFormat = format || 'slack';
+        const normalizedAudience = audience || 'team';
+
+        try {
+          const response = await model.invoke([
+            new SystemMessage(
+              `You are Linea, generating a concise project update for a PM.
+Format it for ${normalizedAudience} and output in ${normalizedFormat} style.
+Use short sections with clear headings and bullets.`,
+            ),
+            new HumanMessage(
+              `Generate a ${normalizedTimeRange} update for project ${projectId || 'the workspace'}.
+Include: highlights, risks/blockers, next steps.`,
+            ),
+          ]);
+
+          const updateText =
+            typeof response.content === 'string'
+              ? response.content
+              : JSON.stringify(response.content);
+
+          return JSON.stringify(
+            {
+              workspaceId,
+              projectId: projectId || null,
+              timeRange: normalizedTimeRange,
+              format: normalizedFormat,
+              audience: normalizedAudience,
+              update: updateText,
+              sections: updateText
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .slice(0, 6),
+              stats: {
+                prsOpened: 0,
+                prsMerged: 0,
+                ticketsClosed: 0,
+                blockers: 0,
+              },
+              note: 'Update generated from current workspace context.',
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, projectId },
+            'Failed to generate project update',
+          );
+
+          return JSON.stringify(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unknown error generating update',
+            },
+            null,
+            2,
+          );
+        }
+      },
+      {
+        name: 'generate_project_update',
+        description: TOOL_DESCRIPTIONS.generateProjectUpdate,
+        schema: GenerateProjectUpdateInputSchema,
       },
     );
   }
@@ -450,9 +943,10 @@ export class ToolsFactory {
         const timestamp = new Date().toISOString();
 
         logger.debug(
-          `[think] Workspace: ${workspaceId}, User: ${userId}, Time: ${timestamp}`,
+          { workspaceId, userId, timestamp },
+          'Think tool invoked',
         );
-        logger.debug(`[think] Thought: ${thought}`);
+        logger.debug({ workspaceId, thought }, 'Think tool thought');
 
         return `Thought recorded at ${timestamp}. Continue with your analysis.`;
       },
@@ -483,9 +977,14 @@ Use this tool after each search to analyze results and plan next steps systemati
         // TODO: implement actual Linear API call here after approval workflow
 
         logger.debug(
-          `[updateLinearTicket] Workspace: ${workspaceId}, User: ${userId}, Ticket: ${ticketId}, Updates: ${JSON.stringify(
+          {
+            workspaceId,
+            userId,
+            ticketId,
             updates,
-          )}, Comment: ${comment || 'N/A'}`,
+            comment: comment || null,
+          },
+          'Prepared Linear ticket update',
         );
 
         // Return a structured response for UI to render approval request
@@ -543,26 +1042,310 @@ Use this tool after each search to analyze results and plan next steps systemati
         const workspaceId = getWorkspaceId(config);
         const userId = getUserId(config);
 
-        // Return a structured response for UI to render approval request
-        return JSON.stringify(
-          {
-            pendingApproval: true,
-            action: 'send_slack_message',
-            workspaceId,
-            requestedBy: userId,
+        try {
+          const integrations =
+            await this.integrationFacade.getIntegrationsByType(
+              workspaceId,
+              IntegrationType.SLACK,
+            );
+          const integrationId = integrations[0]?.id;
+
+          if (!integrationId) {
+            return JSON.stringify(
+              {
+                error: 'Slack integration is not connected.',
+              },
+              null,
+              2,
+            );
+          }
+
+          const token =
+            await this.integrationFacade.getAccessToken(integrationId);
+
+          if (!token) {
+            return JSON.stringify(
+              {
+                error: 'Slack access token is missing.',
+              },
+              null,
+              2,
+            );
+          }
+
+          await this.slackService.postMessage(
+            token,
             channel,
             message,
-            threadTs: threadTs || null,
-            preview: this.formatSlackMessagePreview(channel, message, threadTs),
-          },
-          null,
-          2,
-        );
+            threadTs || undefined,
+          );
+
+          return JSON.stringify(
+            {
+              success: true,
+              action: 'send_slack_message',
+              workspaceId,
+              requestedBy: userId,
+              channel,
+              message,
+              threadTs: threadTs || null,
+              preview: this.formatSlackMessagePreview(
+                channel,
+                message,
+                threadTs,
+              ),
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          this.logger.error(
+            { err: error, workspaceId, channel },
+            'Failed to send Slack message',
+          );
+
+          return JSON.stringify(
+            {
+              error:
+                error instanceof Error ? error.message : 'Unknown Slack error',
+            },
+            null,
+            2,
+          );
+        }
       },
       {
         name: 'send_slack_message',
         description: TOOL_DESCRIPTIONS.sendSlackMessage,
         schema: SendSlackMessageInputSchema,
+      },
+    );
+  }
+
+  private createGetLatestEmailsTool(): StructuredToolInterface {
+    const logger = this.logger;
+
+    return tool(
+      async ({ query, labelIds, limit = 10, includeSpamTrash }, config) => {
+        const workspaceId = getWorkspaceId(config);
+
+        try {
+          const token = await getIntegrationToken(
+            this.integrationFacade,
+            workspaceId,
+            IntegrationType.GOOGLE,
+          );
+
+          if (!token) {
+            return 'Google integration is not connected.';
+          }
+
+          const emails = await this.googleService.listGmailMessages(token, {
+            query,
+            labelIds,
+            limit,
+            includeSpamTrash,
+          });
+
+          if (!emails.length) {
+            return 'No emails found for that query.';
+          }
+
+          return this.formatEmailSummary(emails);
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Failed to fetch Gmail messages',
+          );
+          return `Failed to fetch Gmail messages: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'get_latest_emails',
+        description: TOOL_DESCRIPTIONS.getLatestEmails,
+        schema: GetLatestEmailsInputSchema,
+      },
+    );
+  }
+
+  private createReplyToEmailTool(): StructuredToolInterface {
+    const logger = this.logger;
+
+    return tool(
+      async ({ messageId, body }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+
+        try {
+          const token = await getIntegrationToken(
+            this.integrationFacade,
+            workspaceId,
+            IntegrationType.GOOGLE,
+          );
+
+          if (!token) {
+            return JSON.stringify(
+              { error: 'Google integration is not connected.' },
+              null,
+              2,
+            );
+          }
+
+          const result = await this.googleService.sendGmailReply(token, {
+            messageId,
+            body,
+          });
+
+          return JSON.stringify(
+            {
+              success: true,
+              action: 'reply_to_email',
+              workspaceId,
+              requestedBy: userId,
+              messageId,
+              threadId: result.threadId || null,
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, messageId },
+            'Failed to reply to email',
+          );
+          return JSON.stringify(
+            {
+              error:
+                error instanceof Error ? error.message : 'Unknown Gmail error',
+            },
+            null,
+            2,
+          );
+        }
+      },
+      {
+        name: 'reply_to_email',
+        description: TOOL_DESCRIPTIONS.replyToEmail,
+        schema: ReplyToEmailInputSchema,
+      },
+    );
+  }
+
+  private createGetCalendarEventsTool(): StructuredToolInterface {
+    const logger = this.logger;
+
+    return tool(
+      async ({ timeMin, timeMax, calendarId, limit = 10 }, config) => {
+        const workspaceId = getWorkspaceId(config);
+
+        try {
+          const token = await getIntegrationToken(
+            this.integrationFacade,
+            workspaceId,
+            IntegrationType.GOOGLE,
+          );
+
+          if (!token) {
+            return 'Google integration is not connected.';
+          }
+
+          const events = await this.googleService.listCalendarEvents(token, {
+            timeMin,
+            timeMax,
+            calendarId,
+            limit,
+          });
+
+          if (!events.length) {
+            return 'No calendar events found for that time window.';
+          }
+
+          return this.formatCalendarSummary(events);
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Failed to fetch calendar events',
+          );
+          return `Failed to fetch calendar events: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'get_calendar_events',
+        description: TOOL_DESCRIPTIONS.getCalendarEvents,
+        schema: GetCalendarEventsInputSchema,
+      },
+    );
+  }
+
+  private createScheduleCalendarEventTool(): StructuredToolInterface {
+    const logger = this.logger;
+
+    return tool(
+      async (
+        { summary, description, location, start, end, timeZone, attendees, calendarId },
+        config,
+      ) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+
+        try {
+          const token = await getIntegrationToken(
+            this.integrationFacade,
+            workspaceId,
+            IntegrationType.GOOGLE,
+          );
+
+          if (!token) {
+            return JSON.stringify(
+              { error: 'Google integration is not connected.' },
+              null,
+              2,
+            );
+          }
+
+          const event = await this.googleService.createCalendarEvent(token, {
+            summary,
+            description,
+            location,
+            start,
+            end,
+            timeZone,
+            attendees,
+            calendarId,
+          });
+
+          return JSON.stringify(
+            {
+              success: true,
+              action: 'schedule_calendar_event',
+              workspaceId,
+              requestedBy: userId,
+              event,
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Failed to schedule calendar event',
+          );
+          return JSON.stringify(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unknown calendar error',
+            },
+            null,
+            2,
+          );
+        }
+      },
+      {
+        name: 'schedule_calendar_event',
+        description: TOOL_DESCRIPTIONS.scheduleCalendarEvent,
+        schema: ScheduleCalendarEventInputSchema,
       },
     );
   }
@@ -577,6 +1360,256 @@ Use this tool after each search to analyze results and plan next steps systemati
       `"${message.slice(0, 100)}${message.length > 100 ? '...' : ''}"`,
     ];
     return lines.join('\n');
+  }
+
+  private formatEmailSummary(emails: GmailMessageSummary[]): string {
+    const header = `## Gmail (latest ${emails.length})`;
+    const lines = emails.map((email, index) => {
+      const subject = email.subject || '(no subject)';
+      const from = email.from || 'Unknown sender';
+      const date = email.date || '';
+      const snippet = email.snippet ? `\n   Snippet: ${email.snippet}` : '';
+      return `${index + 1}. **${subject}**\n   From: ${from}\n   Date: ${date}\n   Message ID: ${email.id}${snippet}`;
+    });
+    return [header, ...lines].join('\n\n');
+  }
+
+  private formatCalendarSummary(events: CalendarEventSummary[]): string {
+    const header = `## Calendar events (${events.length})`;
+    const lines = events.map((event, index) => {
+      const summary = event.summary || '(no title)';
+      const start = event.start || '';
+      const end = event.end || '';
+      const attendees = event.attendees?.length
+        ? `\n   Attendees: ${event.attendees.join(', ')}`
+        : '';
+      const location = event.location ? `\n   Location: ${event.location}` : '';
+      return `${index + 1}. **${summary}**\n   ${start} to ${end}${location}${attendees}`;
+    });
+    return [header, ...lines].join('\n\n');
+  }
+
+  private parseRepoIdentifier(
+    repo: string,
+  ): { owner: string; repo: string } | null {
+    const parts = repo.split('/');
+    if (parts.length !== 2) {
+      return null;
+    }
+    const owner = parts[0]?.trim();
+    const name = parts[1]?.trim();
+    if (!owner || !name) {
+      return null;
+    }
+    return { owner, repo: name };
+  }
+
+  private async getSlackAccessToken(
+    workspaceId: string,
+  ): Promise<{ token: string; integrationId: string } | null> {
+    const integrations = await this.integrationFacade.getIntegrationsByType(
+      workspaceId,
+      IntegrationType.SLACK,
+    );
+    const integrationId = integrations[0]?.id;
+
+    if (!integrationId) {
+      return null;
+    }
+
+    const token = await this.integrationFacade.getAccessToken(integrationId);
+
+    if (!token) {
+      return null;
+    }
+
+    return { token, integrationId };
+  }
+
+  private async resolveSlackChannelId(
+    token: string,
+    channel: string,
+  ): Promise<{ id: string; name?: string } | null> {
+    const trimmed = channel.replace(/^#/, '');
+    const channels = await this.slackService.listChannels(token);
+    const match =
+      channels.find((c) => c.id === channel) ||
+      channels.find((c) => c.name === trimmed);
+
+    if (!match) {
+      return null;
+    }
+
+    return { id: match.id, name: match.name };
+  }
+
+  private createSummarizeSlackChannelTool() {
+    const logger = this.logger;
+    const memoryService = this.memoryService;
+    const model = this.modelFast;
+
+    return tool(
+      async ({ channel, limit = 50, saveMemory = true }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+        const ctx = createContext(config);
+
+        try {
+          const tokenResult = await this.getSlackAccessToken(workspaceId);
+          if (!tokenResult) {
+            return 'Slack integration is not connected.';
+          }
+
+          const resolved = await this.resolveSlackChannelId(
+            tokenResult.token,
+            channel,
+          );
+          if (!resolved) {
+            return `Slack channel not found: ${channel}`;
+          }
+
+          const messages = await this.slackService.fetchRecentMessages(
+            tokenResult.token,
+            resolved.id,
+            limit,
+          );
+
+          if (messages.length === 0) {
+            return `No recent messages found for ${channel}.`;
+          }
+
+          const formattedMessages = messages
+            .map((msg) => `- ${msg.user}: ${msg.text}`)
+            .join('\n');
+
+          const prompt = `Summarize the following Slack messages for a PM. Include:
+- Key updates
+- Decisions
+- Blockers
+- Open questions/asks
+
+Messages:
+${formattedMessages}
+
+Summary:`;
+
+          const response = await model.invoke(prompt);
+          const summary =
+            typeof response.content === 'string'
+              ? response.content.trim()
+              : String(response.content).trim();
+
+          if (saveMemory) {
+            await memoryService.saveMemory(ctx, {
+              namespace: 'slack_thread',
+              category: 'discussion',
+              content: summary,
+              summary: `Slack summary: ${resolved.name || channel}`,
+              importance: 0.5,
+              confidence: 0.7,
+              sourceEventIds: [],
+              relatedEntityIds: [],
+              relatedMemoryIds: [],
+              entityRefs: {},
+            });
+          }
+
+          return summary;
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, userId, channel },
+            'Slack summarization failed',
+          );
+
+          return `Failed to summarize Slack channel: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'summarize_slack_channel',
+        description: TOOL_DESCRIPTIONS.summarizeSlackChannel,
+        schema: SummarizeSlackChannelInputSchema,
+      },
+    );
+  }
+
+  private createScheduleStandupDigestTool() {
+    const jobsService = this.lineaJobsService;
+    const logger = this.logger;
+
+    return tool(
+      async (
+        {
+          channel,
+          time = '09:00',
+          timezone = 'UTC',
+          days = 'weekdays',
+          mode = 'suggest',
+        },
+        config,
+      ) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+        const resolvedMode = mode === 'execute' ? 'execute' : 'suggest';
+
+        const timeMatch = time.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+        if (!timeMatch) {
+          return 'Invalid time format. Use HH:mm (24h).';
+        }
+
+        const hour = Number(timeMatch[1]);
+        const minute = Number(timeMatch[2]);
+        const dayMap: Record<string, string> = {
+          weekdays: '1-5',
+          daily: '*',
+          mon: '1',
+          tue: '2',
+          wed: '3',
+          thu: '4',
+          fri: '5',
+          sat: '6',
+          sun: '0',
+        };
+        const dayPart = dayMap[days];
+
+        if (!dayPart) {
+          return 'Invalid days selection for standup digest.';
+        }
+
+        const cron = `${minute} ${hour} * * ${dayPart}`;
+        const task = `Prepare a standup digest for ${channel}. Summarize blockers, progress, and asks from the last 24 hours. ${
+          resolvedMode === 'execute'
+            ? `Post the summary to ${channel} in Slack.`
+            : 'Draft the summary only.'
+        }`;
+
+        try {
+          const result = await jobsService.scheduleTask({
+            workspaceId,
+            userId,
+            task,
+            cron,
+            timezone,
+            mode: resolvedMode,
+            name: `standup:${channel}:${days}:${time}`,
+            deliverToInbox: true,
+          });
+
+          return `Scheduled standup digest (${result.jobId}) at ${time} ${timezone} (${days}).`;
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, channel },
+            'Failed to schedule standup digest',
+          );
+
+          return `Failed to schedule standup digest: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'schedule_standup_digest',
+        description: TOOL_DESCRIPTIONS.scheduleStandupDigest,
+        schema: ScheduleStandupDigestInputSchema,
+      },
+    );
   }
 
   private createCreateGitHubIssueTool() {
@@ -610,6 +1643,216 @@ Use this tool after each search to analyze results and plan next steps systemati
     );
   }
 
+  private createGetGitHubPullRequestsTool(): StructuredToolInterface {
+    const githubService = this.githubService;
+
+    return tool(
+      async ({ repo, state = 'open', limit = 10 }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const repoInfo = this.parseRepoIdentifier(repo);
+        if (!repoInfo) {
+          return 'Invalid repo format. Use owner/repo.';
+        }
+
+        const token = await getIntegrationToken(
+          this.integrationFacade,
+          workspaceId,
+          IntegrationType.GITHUB,
+        );
+        if (!token) {
+          return 'GitHub integration is not connected.';
+        }
+
+        const prs = await githubService.listRepoPullRequests(
+          token,
+          repoInfo.owner,
+          repoInfo.repo,
+          { state, limit },
+        );
+
+        return JSON.stringify({
+          type: 'github.pr.list',
+          repo,
+          state,
+          items: prs,
+        });
+      },
+      {
+        name: 'get_github_pull_requests',
+        description: TOOL_DESCRIPTIONS.getGitHubPullRequests,
+        schema: GetGitHubPullRequestsInputSchema,
+      },
+    );
+  }
+
+  private createGetGitHubPullRequestDetailsTool(): StructuredToolInterface {
+    const githubService = this.githubService;
+
+    return tool(
+      async ({ repo, number }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const repoInfo = this.parseRepoIdentifier(repo);
+        if (!repoInfo) {
+          return 'Invalid repo format. Use owner/repo.';
+        }
+
+        const token = await getIntegrationToken(
+          this.integrationFacade,
+          workspaceId,
+          IntegrationType.GITHUB,
+        );
+        if (!token) {
+          return 'GitHub integration is not connected.';
+        }
+
+        const details = await githubService.getPullRequestDetails(
+          token,
+          repoInfo.owner,
+          repoInfo.repo,
+          number,
+        );
+        const summary = githubService.buildPrSummary(details);
+
+        return JSON.stringify({
+          type: 'github.pr.details',
+          repo,
+          pr: details,
+          summary: summary.summary,
+          prContext: summary.prContext,
+        });
+      },
+      {
+        name: 'get_github_pull_request_details',
+        description: TOOL_DESCRIPTIONS.getGitHubPullRequestDetails,
+        schema: GetGitHubPullRequestDetailsInputSchema,
+      },
+    );
+  }
+
+  private createGetGitHubIssuesTool(): StructuredToolInterface {
+    const githubService = this.githubService;
+
+    return tool(
+      async ({ repo, state = 'open', limit = 10 }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const repoInfo = this.parseRepoIdentifier(repo);
+        if (!repoInfo) {
+          return 'Invalid repo format. Use owner/repo.';
+        }
+
+        const token = await getIntegrationToken(
+          this.integrationFacade,
+          workspaceId,
+          IntegrationType.GITHUB,
+        );
+        if (!token) {
+          return 'GitHub integration is not connected.';
+        }
+
+        const issues = await githubService.listRepoIssues(
+          token,
+          repoInfo.owner,
+          repoInfo.repo,
+          { state, limit },
+        );
+
+        return JSON.stringify({
+          type: 'github.issue.list',
+          repo,
+          state,
+          items: issues,
+        });
+      },
+      {
+        name: 'get_github_issues',
+        description: TOOL_DESCRIPTIONS.getGitHubIssues,
+        schema: GetGitHubIssuesInputSchema,
+      },
+    );
+  }
+
+  private createSearchGitHubIssuesTool(): StructuredToolInterface {
+    const githubService = this.githubService;
+
+    return tool(
+      async ({ query, repo, limit = 10 }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        let searchQuery = query;
+        if (repo) {
+          searchQuery = `${query} repo:${repo}`;
+        }
+
+        const token = await getIntegrationToken(
+          this.integrationFacade,
+          workspaceId,
+          IntegrationType.GITHUB,
+        );
+        if (!token) {
+          return 'GitHub integration is not connected.';
+        }
+
+        const issues = await githubService.searchIssues(
+          token,
+          searchQuery,
+          limit,
+        );
+
+        return JSON.stringify({
+          type: 'github.issue.search',
+          query: searchQuery,
+          items: issues,
+        });
+      },
+      {
+        name: 'search_github_issues',
+        description: TOOL_DESCRIPTIONS.searchGitHubIssues,
+        schema: SearchGitHubIssuesInputSchema,
+      },
+    );
+  }
+
+  private createGetGitHubCommitsTool(): StructuredToolInterface {
+    const githubService = this.githubService;
+
+    return tool(
+      async ({ repo, branch, limit = 10 }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const repoInfo = this.parseRepoIdentifier(repo);
+        if (!repoInfo) {
+          return 'Invalid repo format. Use owner/repo.';
+        }
+
+        const token = await getIntegrationToken(
+          this.integrationFacade,
+          workspaceId,
+          IntegrationType.GITHUB,
+        );
+        if (!token) {
+          return 'GitHub integration is not connected.';
+        }
+
+        const commits = await githubService.listRepoCommits(
+          token,
+          repoInfo.owner,
+          repoInfo.repo,
+          { sha: branch, limit },
+        );
+
+        return JSON.stringify({
+          type: 'github.commit.list',
+          repo,
+          branch: branch || null,
+          items: commits,
+        });
+      },
+      {
+        name: 'get_github_commits',
+        description: TOOL_DESCRIPTIONS.getGitHubCommits,
+        schema: GetGitHubCommitsInputSchema,
+      },
+    );
+  }
+
   private formatGitHubIssuePreview(
     repo: string,
     title: string,
@@ -635,16 +1878,17 @@ Use this tool after each search to analyze results and plan next steps systemati
 
         try {
           // Dynamic import to avoid issues if Tavily isn't installed
-          const { TavilySearch } = await import('@langchain/tavily');
 
           const tavilySearch = new TavilySearch({
             maxResults,
             tavilyApiKey,
           });
 
-          return await tavilySearch._call({ query });
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          //@ts-expect-error
+          return await tavilySearch.invoke({ query });
         } catch (error) {
-          logger.error('[internetSearch] Error:', error);
+          logger.error({ err: error, query, maxResults }, 'Internet search failed');
           return `Error searching the web: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },

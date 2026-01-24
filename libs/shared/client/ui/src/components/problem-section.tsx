@@ -3,23 +3,23 @@ import { BarChart3, TrendingDown, Layers, UserX } from 'lucide-react';
 const problems = [
   {
     icon: BarChart3,
-    title: 'Micromanagement metrics',
-    text: 'Hours, commits, messages tracked - fake productivity rewarded.',
+    title: 'Signals are split',
+    text: 'Slack, Linear, email, and calendar live in different silos.',
   },
   {
     icon: TrendingDown,
-    title: 'Surface-level dashboards',
-    text: 'Tickets closed shown, but the real story is missed.',
+    title: 'Context decays fast',
+    text: 'Decisions happen in threads and vanish by the next standup.',
   },
   {
     icon: Layers,
-    title: 'Context is invisible',
-    text: 'Who prevents fires? Who unlocks others? Nobody knows.',
+    title: 'No shared memory',
+    text: 'Teams repeat decisions because the rationale never sticks.',
   },
   {
     icon: UserX,
-    title: 'One-size-fits-all KPIs',
-    text: 'Different working styles get punished, not embraced.',
+    title: "PMs can't be always-on",
+    text: 'Important signals appear while you are offline or busy.',
   },
 ];
 
@@ -33,10 +33,10 @@ export function ProblemSection() {
               The problem
             </p>
             <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground">
-              Teams waste resources not because people aren't working
+              Teams lose time not because people aren&#39;t working
               <br />
               <span className="text-muted-foreground">
-                - but because context is invisible
+                but because the system forgets what matters
               </span>
             </h2>
           </div>

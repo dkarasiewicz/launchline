@@ -7,7 +7,7 @@ export interface GraphContext {
   correlationId: string; // For tracing
 }
 
-export type SourceType = 'github' | 'linear' | 'slack';
+export type SourceType = 'github' | 'linear' | 'slack' | 'google';
 
 export type EntityType =
   | 'pr'
@@ -87,7 +87,11 @@ export type MemoryCategory =
   | 'assignment'
   | 'insight'
   | 'risk'
-  | 'achievement';
+  | 'achievement'
+  | 'instruction'
+  | 'settings'
+  | 'identity'
+  | 'skill';
 
 export interface MemoryItem {
   id: string;
@@ -188,6 +192,7 @@ export interface LinkedIdentity {
 export const InboxItemTypeSchema = z.enum([
   'blocker',
   'drift',
+  'stalled',
   'update',
   'coverage',
   'risk',
@@ -335,6 +340,15 @@ export interface ThreadDto {
   remoteId: string;
   status: ThreadStatusType;
   title?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  isInboxThread?: boolean;
+  inboxItemType?: string; // Will be converted to InboxItemType enum in resolver
+  inboxPriority?: string; // Will be converted to InboxPriority enum in resolver
+  inboxStatus?: string; // Will be converted to InboxStatus enum in resolver
+  summary?: string;
+  projectId?: string;
+  featureId?: string;
 }
 
 export interface ThreadListResponseDto {
@@ -347,8 +361,23 @@ export interface StoredThread {
   userId: string;
   title?: string;
   archived: boolean;
-  createdAt: string; // ISO string for serialization
+  createdAt: string;
   updatedAt: string;
+  isInboxThread?: boolean;
+  inboxItemType?: string; // Stored as string, converted to enum in resolver
+  inboxPriority?: string; // Stored as string, converted to enum in resolver
+  inboxStatus?: string; // Stored as string, converted to enum in resolver
+  summary?: string;
+  projectId?: string;
+  featureId?: string;
+  sourceMemoryIds?: string[];
+  entityRefs?: {
+    ticketIds?: string[];
+    prIds?: string[];
+    userIds?: string[];
+    teamIds?: string[];
+  };
+
   [key: string]: unknown; // Index signature for store compatibility
 }
 
@@ -373,20 +402,30 @@ export interface ProcessWebhookResult {
 }
 
 export const ToolMemoryNamespaceSchema = z.enum([
+  'workspace',
+  'company',
+  'user',
   'blocker',
   'decision',
   'progress',
   'ticket',
   'pr',
+  'commit',
   'team',
+  'product',
   'project',
   'milestone',
   'epic',
   'slack_thread',
+  'standup',
+  'meeting',
   'coding_insight',
   'discussion',
   'pattern',
   'codebase',
+  'tech_debt',
+  'metric',
+  'retrospective',
   'identity',
 ]);
 
@@ -400,6 +439,8 @@ export const ToolMemoryCategorySchema = z.enum([
   'insight',
   'risk',
   'achievement',
+  'instruction',
+  'skill',
 ]);
 
 export const SearchMemoriesInputSchema = z.object({
@@ -512,11 +553,167 @@ export const SendSlackMessageInputSchema = z.object({
   threadTs: z.string().optional().describe('Thread timestamp for replies'),
 });
 
+export const GetLatestEmailsInputSchema = z.object({
+  query: z
+    .string()
+    .optional()
+    .describe('Optional Gmail search query (e.g., from:ceo@company.com)'),
+  labelIds: z
+    .array(z.string())
+    .optional()
+    .describe('Optional Gmail label IDs to filter by'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(25)
+    .optional()
+    .default(10)
+    .describe('Maximum emails to return'),
+  includeSpamTrash: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Include spam and trash'),
+});
+
+export const ReplyToEmailInputSchema = z.object({
+  messageId: z.string().min(1).describe('Gmail message ID to reply to'),
+  body: z.string().min(1).describe('Reply body'),
+});
+
+export const GetCalendarEventsInputSchema = z.object({
+  timeMin: z.string().min(1).describe('Start of time window (ISO 8601)'),
+  timeMax: z.string().optional().describe('End of time window (ISO 8601)'),
+  calendarId: z
+    .string()
+    .optional()
+    .describe('Calendar ID (defaults to primary)'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(25)
+    .optional()
+    .default(10)
+    .describe('Maximum events to return'),
+});
+
+export const ScheduleCalendarEventInputSchema = z.object({
+  summary: z.string().min(1).describe('Event title'),
+  description: z.string().optional().describe('Event description'),
+  location: z.string().optional().describe('Location'),
+  start: z.string().min(1).describe('Start datetime (ISO 8601)'),
+  end: z.string().min(1).describe('End datetime (ISO 8601)'),
+  timeZone: z.string().optional().describe('Timezone (e.g., America/New_York)'),
+  attendees: z
+    .array(z.string())
+    .optional()
+    .describe('Attendee email addresses'),
+  calendarId: z
+    .string()
+    .optional()
+    .describe('Calendar ID (defaults to primary)'),
+});
+
+export const RunSandboxCommandInputSchema = z.object({
+  command: z
+    .string()
+    .min(1)
+    .describe('Command to run inside the sandbox container'),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .optional()
+    .describe('Timeout in milliseconds (default 120000)'),
+  image: z.string().optional().describe('Optional Docker image override'),
+});
+
+export const GenerateProjectUpdateInputSchema = z.object({
+  projectId: z.string().optional().describe('Optional project identifier'),
+  timeRange: z.string().optional().describe('Time range for the update'),
+  format: z.string().optional().describe('Output format'),
+  audience: z.string().optional().describe('Audience of the update'),
+});
+
 export const CreateGitHubIssueInputSchema = z.object({
   repo: z.string().min(1).describe('Repository name (owner/repo)'),
   title: z.string().min(1).describe('Issue title'),
   body: z.string().optional().describe('Issue body/description'),
   labels: z.array(z.string()).optional().describe('Labels to apply'),
+});
+
+export const GetGitHubPullRequestsInputSchema = z.object({
+  repo: z.string().min(1).describe('Repository name (owner/repo)'),
+  state: z
+    .enum(['open', 'closed', 'all'])
+    .optional()
+    .default('open')
+    .describe('PR state to filter'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .default(10)
+    .describe('Maximum PRs to return'),
+});
+
+export const GetGitHubPullRequestDetailsInputSchema = z.object({
+  repo: z.string().min(1).describe('Repository name (owner/repo)'),
+  number: z.number().int().min(1).describe('Pull request number'),
+});
+
+export const GetGitHubIssuesInputSchema = z.object({
+  repo: z.string().min(1).describe('Repository name (owner/repo)'),
+  state: z
+    .enum(['open', 'closed', 'all'])
+    .optional()
+    .default('open')
+    .describe('Issue state to filter'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .default(10)
+    .describe('Maximum issues to return'),
+});
+
+export const SearchGitHubIssuesInputSchema = z.object({
+  query: z.string().min(1).describe('Search query'),
+  repo: z
+    .string()
+    .optional()
+    .describe('Optional repository filter (owner/repo)'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .default(10)
+    .describe('Maximum results to return'),
+});
+
+export const GetGitHubCommitsInputSchema = z.object({
+  repo: z.string().min(1).describe('Repository name (owner/repo)'),
+  branch: z
+    .string()
+    .optional()
+    .describe('Branch name (defaults to repo default)'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .default(10)
+    .describe('Maximum commits to return'),
 });
 
 export const InternetSearchInputSchema = z.object({
@@ -538,6 +735,130 @@ export const ThinkInputSchema = z.object({
     .describe('The thought or reasoning to record (not shown to user)'),
 });
 
+export const ScheduleTaskInputSchema = z
+  .object({
+    task: z.string().min(1).describe('Task description for Linea to execute'),
+    runAt: z
+      .string()
+      .optional()
+      .describe('ISO 8601 datetime for a one-time task'),
+    cron: z.string().optional().describe('Cron expression for repeats'),
+    timezone: z
+      .string()
+      .optional()
+      .describe('Timezone for cron schedules (e.g., America/New_York)'),
+    mode: z
+      .enum(['suggest', 'execute'])
+      .optional()
+      .default('suggest')
+      .describe('suggest = draft only, execute = allow safe actions'),
+    name: z
+      .string()
+      .optional()
+      .describe('Optional stable name for recurring schedules'),
+    deliverToInbox: z
+      .boolean()
+      .optional()
+      .describe('Post results as an inbox item'),
+    replyToThreadId: z
+      .string()
+      .optional()
+      .describe('Reply directly into an existing thread'),
+  })
+  .refine((value) => Boolean(value.runAt || value.cron), {
+    message: 'Provide either runAt or cron.',
+  });
+
+export const LogDecisionInputSchema = z.object({
+  title: z.string().min(1).describe('Short decision title'),
+  decision: z.string().min(1).describe('Decision made'),
+  rationale: z.string().optional().describe('Why this decision was made'),
+  impact: z.string().optional().describe('Expected impact or tradeoffs'),
+  relatedTicketIds: z
+    .array(z.string())
+    .optional()
+    .describe('Related ticket IDs'),
+  importance: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(0.6)
+    .describe('Importance score 0-1'),
+});
+
+export const SummarizeSlackChannelInputSchema = z.object({
+  channel: z.string().min(1).describe('Slack channel ID or name'),
+  limit: z
+    .number()
+    .int()
+    .min(5)
+    .max(200)
+    .optional()
+    .default(50)
+    .describe('Number of recent messages to summarize'),
+  saveMemory: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Save the summary as a memory'),
+});
+
+export const ScheduleStandupDigestInputSchema = z.object({
+  channel: z.string().min(1).describe('Slack channel ID or name'),
+  time: z
+    .string()
+    .optional()
+    .default('09:00')
+    .describe('Time of day (HH:mm, 24h)'),
+  timezone: z
+    .string()
+    .optional()
+    .default('UTC')
+    .describe('Timezone for the schedule'),
+  days: z
+    .enum([
+      'weekdays',
+      'daily',
+      'mon',
+      'tue',
+      'wed',
+      'thu',
+      'fri',
+      'sat',
+      'sun',
+    ])
+    .optional()
+    .default('weekdays')
+    .describe('Days to run the standup digest'),
+  mode: z
+    .enum(['suggest', 'execute'])
+    .optional()
+    .default('suggest')
+    .describe('suggest = draft only, execute = allow safe actions'),
+});
+
+export const GetTeamInsightsInputSchema = z.object({
+  focus: z
+    .string()
+    .optional()
+    .describe('Optional teammate name or id to focus on'),
+  limit: z
+    .number()
+    .int()
+    .min(20)
+    .max(400)
+    .optional()
+    .default(200)
+    .describe('Maximum memories to scan'),
+});
+
+export const GetWorkspacePromptInputSchema = z.object({});
+
+export const UpdateWorkspacePromptInputSchema = z.object({
+  prompt: z.string().min(1).describe('Updated workspace instructions'),
+});
+
 export type SearchMemoriesInput = z.infer<typeof SearchMemoriesInputSchema>;
 export type SaveMemoryInput = z.infer<typeof SaveMemoryInputSchema>;
 export type GetBlockersInput = z.infer<typeof GetBlockersInputSchema>;
@@ -551,22 +872,75 @@ export type UpdateLinearTicketInput = z.infer<
   typeof UpdateLinearTicketInputSchema
 >;
 export type SendSlackMessageInput = z.infer<typeof SendSlackMessageInputSchema>;
+export type GetLatestEmailsInput = z.infer<typeof GetLatestEmailsInputSchema>;
+export type ReplyToEmailInput = z.infer<typeof ReplyToEmailInputSchema>;
+export type GetCalendarEventsInput = z.infer<
+  typeof GetCalendarEventsInputSchema
+>;
+export type ScheduleCalendarEventInput = z.infer<
+  typeof ScheduleCalendarEventInputSchema
+>;
+export type RunSandboxCommandInput = z.infer<
+  typeof RunSandboxCommandInputSchema
+>;
+export type GenerateProjectUpdateInput = z.infer<
+  typeof GenerateProjectUpdateInputSchema
+>;
 export type CreateGitHubIssueInput = z.infer<
   typeof CreateGitHubIssueInputSchema
 >;
+export type GetGitHubPullRequestsInput = z.infer<
+  typeof GetGitHubPullRequestsInputSchema
+>;
+export type GetGitHubPullRequestDetailsInput = z.infer<
+  typeof GetGitHubPullRequestDetailsInputSchema
+>;
+export type GetGitHubIssuesInput = z.infer<typeof GetGitHubIssuesInputSchema>;
+export type SearchGitHubIssuesInput = z.infer<
+  typeof SearchGitHubIssuesInputSchema
+>;
+export type GetGitHubCommitsInput = z.infer<typeof GetGitHubCommitsInputSchema>;
 export type InternetSearchInput = z.infer<typeof InternetSearchInputSchema>;
 export type ThinkInput = z.infer<typeof ThinkInputSchema>;
+export type ScheduleTaskInput = z.infer<typeof ScheduleTaskInputSchema>;
+export type LogDecisionInput = z.infer<typeof LogDecisionInputSchema>;
+export type SummarizeSlackChannelInput = z.infer<
+  typeof SummarizeSlackChannelInputSchema
+>;
+export type ScheduleStandupDigestInput = z.infer<
+  typeof ScheduleStandupDigestInputSchema
+>;
+export type GetTeamInsightsInput = z.infer<typeof GetTeamInsightsInputSchema>;
+export type GetWorkspacePromptInput = z.infer<
+  typeof GetWorkspacePromptInputSchema
+>;
+export type UpdateWorkspacePromptInput = z.infer<
+  typeof UpdateWorkspacePromptInputSchema
+>;
+
+const LLMObservationTypeValues = [
+  'team_dynamic',
+  'workflow_insight',
+  'risk',
+  'recommendation',
+  'pattern',
+] as const;
+
+export type LLMObservationType = (typeof LLMObservationTypeValues)[number];
+
+const LLMObservationTypeSchema = z.enum(LLMObservationTypeValues);
+const LLMObservationTypeFieldSchema = z
+  .string()
+  .refine(
+    (value): value is LLMObservationType =>
+      LLMObservationTypeValues.includes(value as LLMObservationType),
+    {
+      message: `Must be one of: ${LLMObservationTypeValues.join(', ')}`,
+    },
+  );
 
 export const LLMObservationSchema = z.object({
-  type: z
-    .enum([
-      'team_dynamic',
-      'workflow_insight',
-      'risk',
-      'recommendation',
-      'pattern',
-    ])
-    .describe('Type of observation'),
+  type: LLMObservationTypeFieldSchema.describe('Type of observation'),
   title: z.string().describe('Short title for the observation'),
   observation: z.string().describe('Detailed observation content'),
   importance: z.number().min(0).max(1).describe('Importance score 0-1'),
@@ -662,6 +1036,10 @@ export const MemoryCategorySchema = z.enum([
   'insight',
   'risk',
   'achievement',
+  'instruction',
+  'settings',
+  'skill',
+  'identity',
 ]);
 
 export const SuggestedActionSchema = z.object({

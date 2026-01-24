@@ -136,6 +136,12 @@
         "cwd": "apps/core",
         "command": "drizzle-kit studio --config=drizzle.config.ts"
       }
+    },
+    "demo-seed": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node -r ts-node/register -r tsconfig-paths/register apps/core/src/demo-seed.ts"
+      }
     }
   }
 }
