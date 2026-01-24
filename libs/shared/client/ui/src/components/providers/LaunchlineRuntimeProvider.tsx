@@ -8,10 +8,10 @@ import {
 import {
   type LangChainMessage,
   LangGraphMessagesEvent,
+  useLangGraphRuntime,
 } from '@assistant-ui/react-langgraph';
 import { createThreadListAdapter } from '../../lib/assistant/thread-adapter';
 import { BytesLineDecoder, SSEDecoder } from './sse';
-import { useLangGraphRuntime } from './langraph-runtime';
 import { ThreadState } from '@langchain/langgraph-sdk';
 import { constructMessageFromParams } from './langchain-utils';
 import { type SerializedConstructor } from '@langchain/core/load/serializable';

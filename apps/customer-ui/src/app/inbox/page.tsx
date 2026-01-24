@@ -5,36 +5,17 @@ import Link from 'next/link';
 import { LogoIcon } from '@launchline/ui/components/logo';
 import { Button } from '@launchline/ui/components/ui/button';
 import { Badge } from '@launchline/ui/components/ui/badge';
+import {
+  InboxLineaThread,
+  InboxItemType,
+} from '@launchline/ui/components/inbox/inbox-thread';
 import { cn } from '@launchline/ui/lib/utils';
 
-// Define inbox item types locally (these will be stored as thread metadata)
-export type InboxItemType = 'blocker' | 'drift' | 'update' | 'coverage';
-export type LinkedContext = any; // TODO: Import from a shared types file
-
 // Assistant-UI imports
-import {
-  ThreadPrimitive,
-  ComposerPrimitive,
-  MessagePrimitive,
-  ActionBarPrimitive,
-  AssistantIf,
-  useAssistantState,
-  useAssistantApi,
-} from '@assistant-ui/react';
+import { useAssistantState, useAssistantApi } from '@assistant-ui/react';
 
 // Custom Runtime Provider
 import { LaunchlineRuntimeProvider } from '@launchline/ui';
-
-// Tool UIs
-import {
-  SearchMemoriesTool,
-  GetInboxItemsTool,
-  UpdateLinearTicketToolUI,
-  SendSlackMessageToolUI,
-  GenerateProjectUpdateTool,
-  WriteTodosToolUI,
-  InternetSearchToolUI,
-} from '@launchline/ui/components/tools/linea/LineaTools';
 
 import {
   Inbox,
@@ -47,21 +28,13 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
-  Send,
   Command,
   Eye,
   EyeOff,
-  Sparkles,
   Clock,
   ArrowUpDown,
   X,
-  User,
   ChevronRight,
-  ArrowDownIcon,
-  RefreshCwIcon,
-  CopyIcon,
-  CheckIcon,
-  SquareIcon,
 } from 'lucide-react';
 
 // Priority config
@@ -132,273 +105,6 @@ function TimeAgo({ date }: { date: Date }) {
   if (!timeAgo) return <span className="text-muted-foreground">...</span>;
   return <span>{timeAgo}</span>;
 }
-
-// ============================================================================
-// LINEA ASSISTANT-UI THREAD COMPONENT
-// ============================================================================
-
-/**
- * InboxLineaThread - Assistant-UI powered chat for inbox items
- *
- * Uses the selected thread from the runtime (each inbox item is a thread).
- */
-function InboxLineaThread({
-  itemId,
-  itemContext,
-}: {
-  itemId: string;
-  itemContext: {
-    title: string;
-    summary: string;
-    type: InboxItemType;
-    priority: string;
-    linkedContexts?: LinkedContext[];
-  };
-}) {
-  const api = useAssistantApi();
-
-  // Switch to the thread for this inbox item
-  useEffect(() => {
-    if (itemId) {
-      api.threads().switchToThread(itemId);
-    }
-  }, [itemId, api]);
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Thread Messages - scrollable area */}
-      <ThreadPrimitive.Root className="flex-1 flex flex-col min-h-0">
-        <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
-          {/* Spacer to push messages down */}
-          <AssistantIf condition={({ thread }) => !thread.isEmpty}>
-            <div className="min-h-8 flex-grow" />
-          </AssistantIf>
-
-          <div className="px-6 py-4 pb-24">
-            <AssistantIf condition={({ thread }) => thread.isEmpty}>
-              <InboxThreadWelcome context={itemContext} />
-            </AssistantIf>
-
-            <ThreadPrimitive.Messages
-              components={{
-                UserMessage: InboxUserMessage,
-                AssistantMessage: InboxAssistantMessage,
-              }}
-            />
-          </div>
-
-          <ThreadPrimitive.ViewportFooter className="sticky bottom-0 pointer-events-none">
-            <div className="flex justify-center pb-28">
-              <ThreadPrimitive.ScrollToBottom asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="rounded-full shadow-md bg-background border-border/50 disabled:invisible pointer-events-auto"
-                >
-                  <ArrowDownIcon className="h-4 w-4" />
-                </Button>
-              </ThreadPrimitive.ScrollToBottom>
-            </div>
-          </ThreadPrimitive.ViewportFooter>
-        </ThreadPrimitive.Viewport>
-      </ThreadPrimitive.Root>
-
-      {/* Composer - sticky at bottom */}
-      <div className="flex-shrink-0 p-4 bg-background border-t border-border/50">
-        <InboxComposer />
-      </div>
-
-      {/* Register Tool UIs */}
-      <SearchMemoriesTool />
-      <GetInboxItemsTool />
-      <GenerateProjectUpdateTool />
-      {/* Human-in-the-loop Approval UIs */}
-      <UpdateLinearTicketToolUI />
-      <SendSlackMessageToolUI />
-      <InternetSearchToolUI />
-      {/* DeepAgents built-in write_todos for task planning */}
-      <WriteTodosToolUI />
-    </div>
-  );
-}
-
-// ============================================================================
-
-// Welcome message with inbox context
-function InboxThreadWelcome({
-  context,
-}: {
-  context: {
-    title: string;
-    type: InboxItemType;
-    priority: string;
-    summary: string;
-  };
-}) {
-  const typeInfo = typeConfig[context.type];
-
-  return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
-      <div
-        className={cn(
-          'w-12 h-12 rounded-xl flex items-center justify-center mb-4',
-          typeInfo.bgColor,
-        )}
-      >
-        <Sparkles className={cn('w-6 h-6', typeInfo.color)} />
-      </div>
-      <h3 className="font-medium text-foreground mb-1">Hi, I&apos;m Linea</h3>
-      <p className="text-sm text-muted-foreground max-w-xs">
-        I&apos;m here to help you with this {context.type}. Ask me anything or
-        use the suggested actions below.
-      </p>
-
-      {/* Quick action suggestions */}
-      <div className="flex flex-wrap gap-2 mt-4 justify-center">
-        <ThreadPrimitive.Suggestion
-          prompt="What's blocking this?"
-          autoSend
-          asChild
-        >
-          <Button variant="outline" size="sm" className="text-xs h-8">
-            What&apos;s the blocker?
-          </Button>
-        </ThreadPrimitive.Suggestion>
-        <ThreadPrimitive.Suggestion
-          prompt="Who should I assign this to?"
-          autoSend
-          asChild
-        >
-          <Button variant="outline" size="sm" className="text-xs h-8">
-            Suggest assignee
-          </Button>
-        </ThreadPrimitive.Suggestion>
-        <ThreadPrimitive.Suggestion
-          prompt="What are the next steps to resolve this?"
-          autoSend
-          asChild
-        >
-          <Button variant="outline" size="sm" className="text-xs h-8">
-            Next steps
-          </Button>
-        </ThreadPrimitive.Suggestion>
-      </div>
-    </div>
-  );
-}
-
-// User message component for inbox thread
-function InboxUserMessage() {
-  return (
-    <MessagePrimitive.Root className="flex justify-end gap-3 mb-4">
-      <div className="max-w-[80%]">
-        <div className="px-4 py-3 rounded-2xl rounded-tr-sm text-sm bg-primary text-primary-foreground shadow-sm">
-          <MessagePrimitive.Parts />
-        </div>
-      </div>
-      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-        <User className="w-4 h-4 text-muted-foreground" />
-      </div>
-    </MessagePrimitive.Root>
-  );
-}
-
-// Assistant message component for inbox thread
-function InboxAssistantMessage() {
-  return (
-    <MessagePrimitive.Root className="flex gap-3 mb-4 group">
-      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-        <Sparkles className="w-4 h-4 text-primary" />
-      </div>
-      <div className="max-w-[80%]">
-        <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-card border border-border/50 shadow-sm">
-          <MessagePrimitive.Parts />
-        </div>
-        {/* Fixed height container to prevent layout jump */}
-        <div className="h-7 flex items-center">
-          <InboxAssistantActionBar />
-        </div>
-      </div>
-    </MessagePrimitive.Root>
-  );
-}
-
-// Action bar for assistant messages - uses opacity for smooth show/hide
-function InboxAssistantActionBar() {
-  return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      autohide="not-last"
-      className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-    >
-      <ActionBarPrimitive.Copy asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-        >
-          <MessagePrimitive.If copied>
-            <CheckIcon className="h-3 w-3" />
-          </MessagePrimitive.If>
-          <MessagePrimitive.If copied={false}>
-            <CopyIcon className="h-3 w-3" />
-          </MessagePrimitive.If>
-        </Button>
-      </ActionBarPrimitive.Copy>
-      <ActionBarPrimitive.Reload asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCwIcon className="h-3 w-3" />
-        </Button>
-      </ActionBarPrimitive.Reload>
-    </ActionBarPrimitive.Root>
-  );
-}
-
-// Composer for inbox thread
-function InboxComposer() {
-  return (
-    <ComposerPrimitive.Root className="relative flex items-center gap-2">
-      <div className="flex-1 relative">
-        <ComposerPrimitive.Input
-          placeholder="Ask Linea about this item..."
-          className="w-full bg-muted/50 border border-border rounded-xl h-12 px-4 pr-12 text-sm placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/50 transition-all resize-none"
-          autoFocus
-        />
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          <AssistantIf condition={({ thread }) => !thread.isRunning}>
-            <ComposerPrimitive.Send asChild>
-              <Button
-                size="icon"
-                className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
-            </ComposerPrimitive.Send>
-          </AssistantIf>
-          <AssistantIf condition={({ thread }) => thread.isRunning}>
-            <ComposerPrimitive.Cancel asChild>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-              >
-                <SquareIcon className="w-3.5 h-3.5 fill-current" />
-              </Button>
-            </ComposerPrimitive.Cancel>
-          </AssistantIf>
-        </div>
-      </div>
-    </ComposerPrimitive.Root>
-  );
-}
-
-// ============================================================================
-// END LINEA ASSISTANT-UI COMPONENTS
-// ============================================================================
 
 // Command Palette
 function CommandPalette({
@@ -538,7 +244,9 @@ export default function InboxPage() {
 // Inner component that uses assistant-ui hooks
 function InboxPageContent() {
   // Get threads from assistant-ui runtime using new API
-  const threads = useAssistantState(({ threads }) => threads || []);
+  const threads = useAssistantState((state) => state.threads.threadItems);
+  // Get runtime to access thread list for archiving
+  const assistantApi = useAssistantApi();
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | InboxItemType>('all');
@@ -551,7 +259,7 @@ function InboxPageContent() {
 
   // Map threads to inbox items format
   const items = useMemo(() => {
-    return threads.threadItems.map((thread: any) => ({
+    return threads.map((thread: any) => ({
       id: thread.threadId,
       externalId: thread.threadId,
       type: (thread.metadata?.inboxItemType || 'update') as InboxItemType,
@@ -570,14 +278,17 @@ function InboxPageContent() {
     }));
   }, [threads]);
 
-  // Resolve function using runtime
-  const resolveItem = useCallback((itemId: string) => {
-    // TODO: Implement delete via GraphQL mutation (deleteThread)
-    // This will call the backend to archive/delete the thread
-    console.log('Resolving item:', itemId);
-    // Note: runtime.threadList doesn't have a delete method
-    // We need to implement this via GraphQL mutation
-  }, []);
+  // Resolve function using assistant-ui runtime's archive
+  const resolveItem = useCallback(
+    async (itemId: string) => {
+      try {
+        assistantApi.threads().item({ id: itemId }).archive();
+      } catch (error) {
+        console.error('Failed to archive thread:', error);
+      }
+    },
+    [assistantApi],
+  );
 
   // Filter and sort items
   const filteredItems = useMemo(() => {
@@ -877,7 +588,7 @@ function InboxPageContent() {
         {/* Items List */}
         <div className="flex-1 overflow-auto p-2">
           {activeItems.length === 0 && !showResolved ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-6">
+            <div className="flex flex-col items-center justify-center text-center p-6">
               <div className="w-12 h-12 rounded-full bg-status-success/10 flex items-center justify-center mb-3">
                 <Check className="w-6 h-6 text-status-success" />
               </div>
