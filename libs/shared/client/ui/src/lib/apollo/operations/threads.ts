@@ -114,6 +114,28 @@ export const APPEND_MESSAGE_MUTATION = gql`
   }
 `;
 
+/**
+ * Get a single thread by ID
+ */
+export const THREAD_QUERY = gql`
+  query Thread($threadId: String!) {
+    thread(threadId: $threadId) {
+      remoteId
+      status
+      title
+      createdAt
+      updatedAt
+      isInboxThread
+      inboxItemType
+      inboxPriority
+      inboxStatus
+      summary
+      projectId
+      featureId
+    }
+  }
+`;
+
 // ============================================================================
 // Thread Queries (as strings for fetch-based client)
 // ============================================================================
@@ -135,6 +157,25 @@ export const THREADS_QUERY_STRING = `
         projectId
         featureId
       }
+    }
+  }
+`;
+
+export const THREAD_QUERY_STRING = `
+  query Thread($threadId: String!) {
+    thread(threadId: $threadId) {
+      remoteId
+      status
+      title
+      createdAt
+      updatedAt
+      isInboxThread
+      inboxItemType
+      inboxPriority
+      inboxStatus
+      summary
+      projectId
+      featureId
     }
   }
 `;

@@ -28,6 +28,46 @@ registerEnumType(MessageRole, {
   description: 'The role of a message sender',
 });
 
+// Inbox-specific enums
+export enum InboxItemType {
+  BLOCKER = 'blocker',
+  DRIFT = 'drift',
+  UPDATE = 'update',
+  COVERAGE = 'coverage',
+  RISK = 'risk',
+  ACTION_REQUIRED = 'action_required',
+}
+
+registerEnumType(InboxItemType, {
+  name: 'InboxItemType',
+  description: 'The type of inbox item',
+});
+
+export enum InboxPriority {
+  CRITICAL = 'critical',
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
+}
+
+registerEnumType(InboxPriority, {
+  name: 'InboxPriority',
+  description: 'The priority level of an inbox item',
+});
+
+export enum InboxStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  ACTIONED = 'actioned',
+  DISMISSED = 'dismissed',
+  AUTO_RESOLVED = 'auto_resolved',
+}
+
+registerEnumType(InboxStatus, {
+  name: 'InboxStatus',
+  description: 'The status of an inbox item',
+});
+
 @ObjectType()
 export class Thread {
   @Field()
@@ -49,14 +89,14 @@ export class Thread {
   @Field({ nullable: true })
   isInboxThread?: boolean;
 
-  @Field({ nullable: true })
-  inboxItemType?: string;
+  @Field(() => InboxItemType, { nullable: true })
+  inboxItemType?: InboxItemType;
 
-  @Field({ nullable: true })
-  inboxPriority?: string;
+  @Field(() => InboxPriority, { nullable: true })
+  inboxPriority?: InboxPriority;
 
-  @Field({ nullable: true })
-  inboxStatus?: string;
+  @Field(() => InboxStatus, { nullable: true })
+  inboxStatus?: InboxStatus;
 
   @Field({ nullable: true })
   summary?: string;

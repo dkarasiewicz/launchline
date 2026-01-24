@@ -338,9 +338,9 @@ export interface ThreadDto {
   createdAt?: string;
   updatedAt?: string;
   isInboxThread?: boolean;
-  inboxItemType?: InboxItemType;
-  inboxPriority?: InboxPriority;
-  inboxStatus?: InboxStatus;
+  inboxItemType?: string; // Will be converted to InboxItemType enum in resolver
+  inboxPriority?: string; // Will be converted to InboxPriority enum in resolver
+  inboxStatus?: string; // Will be converted to InboxStatus enum in resolver
   summary?: string;
   projectId?: string;
   featureId?: string;
@@ -359,9 +359,9 @@ export interface StoredThread {
   createdAt: string;
   updatedAt: string;
   isInboxThread?: boolean;
-  inboxItemType?: InboxItemType;
-  inboxPriority?: InboxPriority;
-  inboxStatus?: InboxStatus;
+  inboxItemType?: string; // Stored as string, converted to enum in resolver
+  inboxPriority?: string; // Stored as string, converted to enum in resolver
+  inboxStatus?: string; // Stored as string, converted to enum in resolver
   summary?: string;
   projectId?: string;
   featureId?: string;

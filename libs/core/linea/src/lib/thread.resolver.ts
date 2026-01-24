@@ -1,5 +1,5 @@
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { Logger } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser, CurrentUser } from '@launchline/core-common';
 import { WorkspaceFacade } from '@launchline/core-workspace';
 import { AssistantService } from './assistant.service';
@@ -11,6 +11,9 @@ import {
   InitializeThreadInput,
   RenameThreadInput,
   GenerateTitleInput,
+  InboxItemType,
+  InboxPriority,
+  InboxStatus,
 } from './thread.models';
 
 @Resolver(() => Thread)
@@ -47,13 +50,56 @@ export class ThreadResolver {
         createdAt: t.createdAt ? new Date(t.createdAt) : undefined,
         updatedAt: t.updatedAt ? new Date(t.updatedAt) : undefined,
         isInboxThread: t.isInboxThread,
-        inboxItemType: t.inboxItemType,
-        inboxPriority: t.inboxPriority,
-        inboxStatus: t.inboxStatus,
+        inboxItemType: t.inboxItemType as InboxItemType,
+        inboxPriority: t.inboxPriority as InboxPriority,
+        inboxStatus: t.inboxStatus as InboxStatus,
         summary: t.summary,
         projectId: t.projectId,
         featureId: t.featureId,
       })),
+    };
+  }
+
+  @Query(() => Thread, { nullable: true })
+  async thread(
+    @CurrentUser() user: AuthenticatedUser,
+    @Args('threadId') threadId: string,
+  ): Promise<Thread | null> {
+    this.logger.debug(`Fetching thread: ${threadId} for user: ${user.userId}`);
+
+    const storedThread = await this.assistantService.getThread(threadId);
+
+    if (!storedThread) {
+      return null;
+    }
+
+    // Verify user has access to this thread
+    const workspace = await this.workspaceFacade.getWorkspaceByUserId(
+      user.userId,
+    );
+    if (storedThread.workspaceId !== workspace.id) {
+      throw new NotFoundException(`Thread ${threadId} not found`);
+    }
+
+    return {
+      remoteId: storedThread.id,
+      status: storedThread.archived
+        ? ThreadStatus.ARCHIVED
+        : ThreadStatus.REGULAR,
+      title: storedThread.title,
+      createdAt: storedThread.createdAt
+        ? new Date(storedThread.createdAt)
+        : undefined,
+      updatedAt: storedThread.updatedAt
+        ? new Date(storedThread.updatedAt)
+        : undefined,
+      isInboxThread: storedThread.isInboxThread,
+      inboxItemType: storedThread.inboxItemType as InboxItemType,
+      inboxPriority: storedThread.inboxPriority as InboxPriority,
+      inboxStatus: storedThread.inboxStatus as InboxStatus,
+      summary: storedThread.summary,
+      projectId: storedThread.projectId,
+      featureId: storedThread.featureId,
     };
   }
 

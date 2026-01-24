@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
-import { gql } from '@apollo/client';
 import Link from 'next/link';
 import { LogoIcon } from '@launchline/ui/components/logo';
 import { Button } from '@launchline/ui/components/ui/button';
@@ -17,7 +16,7 @@ import { cn } from '@launchline/ui/lib/utils';
 import { useAssistantState, useAssistantApi } from '@assistant-ui/react';
 
 // Custom Runtime Provider
-import { LaunchlineRuntimeProvider } from '@launchline/ui';
+import { LaunchlineRuntimeProvider, THREADS_QUERY } from '@launchline/ui';
 
 import {
   Inbox,
@@ -38,7 +37,6 @@ import {
   X,
   ChevronRight,
 } from 'lucide-react';
-import { THREADS_QUERY_STRING } from '@launchline/ui/lib/apollo';
 
 // Priority config
 const priorityConfig: Record<
@@ -268,7 +266,7 @@ function InboxPageContent() {
         featureId?: string;
       }[];
     };
-  }>(gql(THREADS_QUERY_STRING));
+  }>(THREADS_QUERY);
   // Get runtime to access thread list for archiving
   const assistantApi = useAssistantApi();
 

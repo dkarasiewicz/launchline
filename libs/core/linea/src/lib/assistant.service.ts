@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LINEA_STORE, LINEA_MODEL_FAST } from './tokens';
 import type { BaseStore } from '@langchain/langgraph';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import {
+import type {
   MessageDto,
   ThreadDto,
   ThreadListResponseDto,
@@ -267,10 +267,7 @@ Title:`;
     return { remoteId: threadId };
   }
 
-  async updateInboxStatus(
-    threadId: string,
-    status: InboxStatus,
-  ): Promise<void> {
+  async updateInboxStatus(threadId: string, status: string): Promise<void> {
     const thread = await this.getThread(threadId);
 
     if (!thread || !thread.isInboxThread) {
@@ -293,7 +290,8 @@ Title:`;
       updatedAt: new Date().toISOString(),
     };
 
-    if (['actioned', 'auto-resolved', 'closed', 'dismissed'].includes(status)) {
+    // Archive thread if status indicates resolution
+    if (['actioned', 'auto_resolved', 'dismissed'].includes(status)) {
       updatedThread.archived = true;
     }
 
