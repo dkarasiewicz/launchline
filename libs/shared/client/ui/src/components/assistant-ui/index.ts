@@ -1,18 +1,10 @@
-/**
- * Launchline Assistant-UI Components
- *
- * This module exports all assistant-ui components and utilities
- * for integrating the Linea DeepAgent with the Launchline web application.
- */
-
-// Thread component
-export { Thread } from '@launchline/ui/components/assistant-ui/thread';
+export { Thread } from './thread';
 
 // Markdown rendering
-export { MarkdownText } from '@launchline/ui/components/assistant-ui/markdown-text';
+export { MarkdownText } from './markdown-text';
 
 // Tool fallback
-export { ToolFallback } from '@launchline/ui/components/assistant-ui/tool-fallback';
+export { ToolFallback } from './tool-fallback';
 
 // Linea Tool UIs
 export {
@@ -22,4 +14,4 @@ export {
   SendSlackMessageToolUI,
   GenerateProjectUpdateTool,
   WriteTodosToolUI,
-} from '@launchline/ui/components/tools/linea/LineaTools';
+} from '../tools/linea/LineaTools';

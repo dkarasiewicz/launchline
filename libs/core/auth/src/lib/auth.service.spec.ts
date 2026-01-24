@@ -32,13 +32,10 @@ describe('AuthService', () => {
           },
         },
         {
-          provide: 'TWILIO_CLIENT',
+          provide: 'ANALYTICS_CLIENT',
           useValue: {
             verify: {
-              services: jest.fn().mockReturnThis(),
-              verifications: {
-                create: jest.fn(),
-              },
+              capture: jest.fn(),
             },
           },
         },
