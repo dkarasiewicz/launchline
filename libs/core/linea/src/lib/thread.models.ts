@@ -47,13 +47,16 @@ export class Thread {
 
   // Inbox metadata
   @Field({ nullable: true })
-  inboxItemType?: string; // 'blocker' | 'drift' | 'update' | 'coverage'
+  isInboxThread?: boolean;
 
   @Field({ nullable: true })
-  inboxPriority?: string; // 'critical' | 'high' | 'medium' | 'low'
+  inboxItemType?: string;
 
   @Field({ nullable: true })
-  inboxStatus?: string; // 'new' | 'pending' | 'actioned' | 'auto-resolved' | 'closed' | 'dismissed'
+  inboxPriority?: string;
+
+  @Field({ nullable: true })
+  inboxStatus?: string;
 
   @Field({ nullable: true })
   summary?: string;

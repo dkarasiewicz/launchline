@@ -37,16 +37,23 @@ export class ThreadResolver {
     );
 
     return {
-      threads: result.threads.map(
-        (t: { remoteId: string; status: string; title?: string }) => ({
-          remoteId: t.remoteId,
-          status:
-            t.status === 'archived'
-              ? ThreadStatus.ARCHIVED
-              : ThreadStatus.REGULAR,
-          title: t.title,
-        }),
-      ),
+      threads: result.threads.map((t) => ({
+        remoteId: t.remoteId,
+        status:
+          t.status === 'archived'
+            ? ThreadStatus.ARCHIVED
+            : ThreadStatus.REGULAR,
+        title: t.title,
+        createdAt: t.createdAt ? new Date(t.createdAt) : undefined,
+        updatedAt: t.updatedAt ? new Date(t.updatedAt) : undefined,
+        isInboxThread: t.isInboxThread,
+        inboxItemType: t.inboxItemType,
+        inboxPriority: t.inboxPriority,
+        inboxStatus: t.inboxStatus,
+        summary: t.summary,
+        projectId: t.projectId,
+        featureId: t.featureId,
+      })),
     };
   }
 

@@ -335,6 +335,15 @@ export interface ThreadDto {
   remoteId: string;
   status: ThreadStatusType;
   title?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  isInboxThread?: boolean;
+  inboxItemType?: InboxItemType;
+  inboxPriority?: InboxPriority;
+  inboxStatus?: InboxStatus;
+  summary?: string;
+  projectId?: string;
+  featureId?: string;
 }
 
 export interface ThreadListResponseDto {
@@ -347,8 +356,23 @@ export interface StoredThread {
   userId: string;
   title?: string;
   archived: boolean;
-  createdAt: string; // ISO string for serialization
+  createdAt: string;
   updatedAt: string;
+  isInboxThread?: boolean;
+  inboxItemType?: InboxItemType;
+  inboxPriority?: InboxPriority;
+  inboxStatus?: InboxStatus;
+  summary?: string;
+  projectId?: string;
+  featureId?: string;
+  sourceMemoryIds?: string[];
+  entityRefs?: {
+    ticketIds?: string[];
+    prIds?: string[];
+    userIds?: string[];
+    teamIds?: string[];
+  };
+
   [key: string]: unknown; // Index signature for store compatibility
 }
 

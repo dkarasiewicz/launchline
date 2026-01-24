@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import Link from 'next/link';
 import { LogoIcon } from '@launchline/ui/components/logo';
 import { Button } from '@launchline/ui/components/ui/button';
@@ -36,6 +38,7 @@ import {
   X,
   ChevronRight,
 } from 'lucide-react';
+import { THREADS_QUERY_STRING } from '@launchline/ui/lib/apollo';
 
 // Priority config
 const priorityConfig: Record<
@@ -244,7 +247,28 @@ export default function InboxPage() {
 // Inner component that uses assistant-ui hooks
 function InboxPageContent() {
   // Get threads from assistant-ui runtime using new API
-  const threads = useAssistantState((state) => state.threads.threadItems);
+  const assistantThreads = useAssistantState(
+    (state) => state.threads.threadItems,
+  );
+  // Query all thread data including inbox metadata
+  const { data: threadsData, loading } = useQuery<{
+    threads: {
+      threads: {
+        remoteId: string;
+        status: string;
+        title?: string;
+        createdAt?: string;
+        updatedAt?: string;
+        isInboxThread?: boolean;
+        inboxItemType?: string;
+        inboxPriority?: string;
+        inboxStatus?: string;
+        summary?: string;
+        projectId?: string;
+        featureId?: string;
+      }[];
+    };
+  }>(gql(THREADS_QUERY_STRING));
   // Get runtime to access thread list for archiving
   const assistantApi = useAssistantApi();
 
@@ -257,26 +281,50 @@ function InboxPageContent() {
   const [justResolvedId, setJustResolvedId] = useState<string | null>(null);
   const [pendingResolveId, setPendingResolveId] = useState<string | null>(null);
 
-  // Map threads to inbox items format
+  // Map threads to inbox items format - combine assistant-ui threads with GraphQL data
   const items = useMemo(() => {
-    return threads.map((thread: any) => ({
-      id: thread.threadId,
-      externalId: thread.threadId,
-      type: (thread.metadata?.inboxItemType || 'update') as InboxItemType,
-      status: thread.metadata?.inboxStatus || 'new',
-      priority: thread.metadata?.inboxPriority || 'medium',
-      title: thread.title || 'Untitled',
-      summary: thread.metadata?.summary || '',
-      timestamp: thread.metadata?.createdAt
-        ? new Date(thread.metadata.createdAt)
-        : new Date(),
-      projectId: thread.metadata?.projectId || '',
-      featureId: thread.metadata?.featureId,
-      linkedContexts: thread.metadata?.linkedContexts || [],
-      messages: [],
-      executionLogs: [],
-    }));
-  }, [threads]);
+    if (loading || !threadsData?.threads?.threads) {
+      return [];
+    }
+
+    // Create a map of thread data by remoteId for quick lookup
+    const threadDataMap = new Map(
+      threadsData.threads.threads.map((t) => [t.remoteId, t]),
+    );
+
+    return assistantThreads
+      .filter((thread) => {
+        // Filter out archived and new threads from assistant-ui
+        if (['archived', 'new'].includes(thread.status)) return false;
+
+        // Get thread data to check if it's an inbox thread
+        const threadData = threadDataMap.get(thread.externalId as string);
+
+        // Only include inbox threads in the inbox view
+        return threadData?.isInboxThread === true;
+      })
+      .map((thread) => {
+        const threadData = threadDataMap.get(thread.externalId as string);
+
+        return {
+          id: thread.externalId as string,
+          externalId: thread.externalId,
+          type: (threadData?.inboxItemType || 'update') as InboxItemType,
+          status: threadData?.inboxStatus || thread.status || 'new',
+          priority: threadData?.inboxPriority || 'medium',
+          title: thread.title || threadData?.title || 'Untitled',
+          summary: threadData?.summary || '',
+          timestamp: threadData?.createdAt
+            ? new Date(threadData.createdAt)
+            : new Date(),
+          projectId: threadData?.projectId || '',
+          featureId: threadData?.featureId || '',
+          linkedContexts: [],
+          messages: [],
+          executionLogs: [],
+        };
+      });
+  }, [assistantThreads, threadsData, loading]);
 
   // Resolve function using assistant-ui runtime's archive
   const resolveItem = useCallback(
@@ -375,15 +423,23 @@ function InboxPageContent() {
     }
   }, [justResolvedId, items]);
 
-  const handleResolve = useCallback(() => {
-    if (!selectedItem || pendingResolveId) return;
-    setPendingResolveId(selectedItem.id);
-  }, [selectedItem, pendingResolveId]);
+  const handleResolve = useCallback(
+    (itemId?: string) => {
+      const idToResolve = itemId || selectedItem?.id;
+      if (!idToResolve || pendingResolveId) return;
+      setPendingResolveId(idToResolve);
+    },
+    [selectedItem, pendingResolveId],
+  );
 
-  const handleQuickAction = useCallback(() => {
-    if (!selectedItem || pendingResolveId) return;
-    setPendingResolveId(selectedItem.id);
-  }, [selectedItem, pendingResolveId]);
+  const handleQuickAction = useCallback(
+    (itemId?: string) => {
+      const idToResolve = itemId || selectedItem?.id;
+      if (!idToResolve || pendingResolveId) return;
+      setPendingResolveId(idToResolve);
+    },
+    [selectedItem, pendingResolveId],
+  );
 
   // Keyboard navigation
   useEffect(() => {
@@ -656,8 +712,7 @@ function InboxPageContent() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedItemId(item.id);
-                        setTimeout(handleQuickAction, 50);
+                        handleQuickAction(item.id);
                       }}
                       className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-all"
                       title="Quick action (Q)"
@@ -777,7 +832,7 @@ function InboxPageContent() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleResolve}
+                    onClick={() => handleResolve()}
                     className="h-8 text-xs bg-transparent"
                   >
                     <Check className="w-3.5 h-3.5 mr-1.5" />

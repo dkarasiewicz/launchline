@@ -14,6 +14,15 @@ export const THREADS_QUERY = gql`
         remoteId
         status
         title
+        createdAt
+        updatedAt
+        isInboxThread
+        inboxItemType
+        inboxPriority
+        inboxStatus
+        summary
+        projectId
+        featureId
       }
     }
   }
@@ -116,6 +125,15 @@ export const THREADS_QUERY_STRING = `
         remoteId
         status
         title
+        createdAt
+        updatedAt
+        isInboxThread
+        inboxItemType
+        inboxPriority
+        inboxStatus
+        summary
+        projectId
+        featureId
       }
     }
   }
@@ -187,6 +205,15 @@ export interface ThreadData {
   remoteId: string;
   status: 'REGULAR' | 'ARCHIVED';
   title?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  isInboxThread?: boolean;
+  inboxItemType?: string; // 'blocker' | 'drift' | 'update' | 'coverage'
+  inboxPriority?: string; // 'critical' | 'high' | 'medium' | 'low'
+  inboxStatus?: string; // 'new' | 'pending' | 'actioned' | 'auto-resolved' | 'closed' | 'dismissed'
+  summary?: string;
+  projectId?: string;
+  featureId?: string;
 }
 
 export interface ThreadsQueryResult {
