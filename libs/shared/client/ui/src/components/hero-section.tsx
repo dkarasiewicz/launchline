@@ -13,24 +13,25 @@ export function HeroSection() {
 
       <div className="relative z-10 mx-auto max-w-3xl px-6 text-center">
         <div className="inline-flex items-center rounded-full border border-border bg-secondary/30 px-3 py-1 text-xs text-muted-foreground mb-12">
-          Soon in early access
+          Early access
         </div>
 
         <h1 className="text-4xl md:text-6xl font-medium tracking-tight text-foreground leading-[1.1] mb-6">
-          The execution inbox
+          Transparency without
           <br />
-          <span className="text-accent">for product managers</span>
+          <span className="text-accent">micromanagement</span>
         </h1>
 
         <p className="text-lg text-muted-foreground max-w-xl mx-auto mb-8 leading-relaxed">
-          Launchline watches Linear, Slack, and GitHub — surfaces the things you{' '}
-          <em className="text-accent not-italic">must</em> act on — so you can
-          unblock teams and deliver with confidence.
+          Launchline helps teams see what's{' '}
+          <em className="text-accent not-italic">actually</em> happening - not
+          what fits in spreadsheets. Surface hidden impact, respect context,
+          embrace different working styles.
         </p>
 
         <p className="text-sm text-muted-foreground/80 mb-12">
-          Engineers got coding copilots.{' '}
-          <span className="text-foreground/80">Product teams never did.</span>
+          Impact without fake KPIs.{' '}
+          <span className="text-foreground/80">Finally.</span>
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

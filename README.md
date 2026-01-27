@@ -1,26 +1,81 @@
 # Launchline
 
-Launchline is the **execution inbox for product managers (PMs)** — an AI‑augmented platform that watches work across your tools (Linear, Slack, GitHub), surfaces what matters now, and helps PMs take confident action.
+**Transparency without micromanagement. Impact without fake KPIs.**
 
-Unlike dashboards or planning tools that only track work, Launchline focuses on **understanding** and **acting** on work by turning raw signals into summaries, insights, and suggested actions with a human‑in‑the‑loop workflow.
+Launchline helps teams see what's *actually* happening - not what fits in spreadsheets.
 
-> Status: Early stage. APIs, schemas, and configuration may change.
+---
+
+## Why Launchline?
+
+Most teams waste resources not because people aren't working, but because **context is invisible**:
+
+- A developer who "closes fewer tickets" might be preventing production fires
+- Someone who writes less code might be unlocking others through great design
+- A PM who doesn't "ship features" might be keeping the team aligned
+
+### The problem with traditional tracking
+
+**Micromanagement metrics** (hours, commits, messages) → fake productivity  
+**Surface-level dashboards** (tickets closed) → miss the real story  
+**One-size-fits-all KPIs** → punish different working styles
+
+Some people thrive on daily increments. Others need deep focus and moments of inspiration. Traditional tools force everyone into the same mold - and punish those who don't fit.
+
+### What Launchline does differently
+
+Launchline is an **AI-augmented execution platform** that:
+
+- **Surfaces hidden impact** - code reviews, mentoring, firefighting, unblocking others
+- **Respects context** - understands *why* work is slow, not just *that* it is
+- **Embraces different styles** - recognizes value that doesn't show up in Jira
+- **Increases transparency** - gives managers clarity without surveillance
+- **Keeps it fair** - respects people who do their job, highlights those who go beyond
+
+We collect signals across your tools (Linear, GitHub, Slack), turn them into insights, and help you understand:
+
+- Where resources are actually going
+- What blockers exist *before* they derail your roadmap
+- How each team member's strengths can be better utilized
+- Which small actions have the biggest impact on your product
+
+---
+
+## The vision
+
+### Today: Execution inbox
+
+An AI-powered PM inbox that surfaces blockers, priority drift, and decisions across tools.
+
+### Next: Intelligent resource allocation
+
+- **Predict blockers** before they happen (ML models + platform signals)
+- **Recommend work distribution** based on team strengths and historical patterns
+- **Show broader context** - what founders miss while focused on immediate priorities
+
+### Eventually: Impact transparency for everyone
+
+- **For developers**: See how your work shapes the product, even when it's not "shipping features"
+- **For teams**: Highlight underdeveloped areas, frequent pain points, customer impact zones
+- **For organizations**: Understand how small actions compound into outcomes
+
+We believe teams should organize around people's strengths - not force people into arbitrary processes.
 
 ---
 
 ## Features
 
 - **PM Inbox**
-  - One place for blockers, priority drift, and project update opportunities.
+  - One place for blockers, priority drift, and project update opportunities
 - **Generative summaries**
-  - Human‑readable explanations of context across Linear, GitHub, Slack.
+  - Human-readable explanations of context across Linear, GitHub, Slack
 - **Suggested actions**
-  - Structured, user‑approved actions (update Linear, comment on GitHub, notify via Slack).
+  - Structured, user-approved actions (update Linear, comment on GitHub, notify via Slack)
 - **Conversational threads**
-  - Chat‑style interface for each Inbox item, powered by AI agents.
+  - Chat-style interface for each Inbox item, powered by AI agents
 - **Tool integrations**
-  - Current: Linear, GitHub, Slack.  
-  - Planned: Notion, Jira, Figma, feedback tools.
+  - Current: Linear, GitHub, Slack
+  - Planned: Notion, Jira, Figma, feedback tools
 
 ---
 
@@ -28,21 +83,17 @@ Unlike dashboards or planning tools that only track work, Launchline focuses on 
 
 Product work is becoming too complex for humans alone.
 
-Modern products are built across dozens of tools, teams, and decisions. PMs are expected to keep everything aligned — but the system itself doesn\'t learn. Launchline is building the missing layer: a product copilot that understands context, history, and tradeoffs — not just tickets.
+Modern products are built across dozens of tools, teams, and decisions. PMs are expected to keep everything aligned - but the system itself doesn't learn.
 
-### Today: Execution inbox
+Launchline is building the missing layer: a **product copilot** that understands context, history, and tradeoffs - not just tickets.
 
-Captures blockers, risks, and decisions across tools.
+### Execution → Memory → Copilot
 
-### Next: Product memory
+**Execution inbox**: Captures blockers, risks, and decisions across tools  
+**Product memory**: Understands how your team, product, and users behave over time  
+**Product copilot**: Helps steer priorities and tradeoffs - grounded in reality
 
-Understands how your team, product, and users behave over time.
-
-### Eventually: Product copilot
-
-Helps steer priorities and tradeoffs — grounded in reality.
-
-We start where the pain is highest: execution. Inbox → decisions → unblock → ship.
+We start where the pain is highest: **execution**. Inbox → decisions → unblock → ship.
 
 ---
 
@@ -212,7 +263,7 @@ pnpm nx start customer-ui -p 2201
 
 ## Contributing
 
-Issues and pull requests are welcome. The community can shape the roadmap — thoughtful contributions are encouraged.
+Issues and pull requests are welcome. The community can shape the roadmap - thoughtful contributions are encouraged.
 
 For contribution and collaboration guidelines (licensing, code review, PR expectations, triage), see `./CONTRIBUTING.md`.
 

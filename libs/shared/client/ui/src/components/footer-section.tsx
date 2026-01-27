@@ -94,7 +94,7 @@ export function FooterSection() {
         </div>
 
         <div className="pt-8 border-t border-border">
-          <p className="text-xs text-muted-foreground/60">© 2025 Launchline</p>
+          <p className="text-xs text-muted-foreground/60">© 2026 Launchline</p>
         </div>
       </div>
     </footer>
