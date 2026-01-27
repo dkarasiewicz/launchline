@@ -7,4 +7,9 @@ export interface AuthenticatedUser {
   email: string | null;
   isVerified: boolean;
   isOnboarded: boolean;
+  primaryWorkspaceId: string;
+}
+
+export interface AuthenticatedWorkspace {
+  id: string;
 }

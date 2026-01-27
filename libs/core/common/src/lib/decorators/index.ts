@@ -3,3 +3,4 @@ export * from './current-user.decorator';
 export * from './session-id.decorator';
 export * from './roles.decorator';
 export * from './marketing-session-id.decorator';
+export * from './current-workspace.decorator';

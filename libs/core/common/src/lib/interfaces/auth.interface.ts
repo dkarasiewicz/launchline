@@ -5,4 +5,5 @@ export interface UserDTO {
   name: string | null;
   role: UserRole;
   id: string;
+  primaryWorkspaceId: string;
 }

@@ -1,6 +1,8 @@
 import { Inject, Module, OnApplicationBootstrap } from '@nestjs/common';
 import { WorkspaceModule } from '@launchline/core-workspace';
+import { IntegrationModule } from '@launchline/core-integration';
 import { LineaFacade } from './linea.facade';
+import { LineaQueue } from './linea.queue';
 import { AssistantService } from './assistant.service';
 import { AssistantController } from './assistant.controller';
 import { ThreadResolver } from './thread.resolver';
@@ -24,7 +26,7 @@ import type { PostgresStore } from '@langchain/langgraph-checkpoint-postgres/sto
 import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 
 @Module({
-  imports: [WorkspaceModule],
+  imports: [WorkspaceModule, IntegrationModule],
   controllers: [AssistantController],
   providers: [
     // Models (ChatOpenAI, ChatAnthropic, Embeddings)
@@ -59,6 +61,8 @@ import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
     },
     // Application services
     AssistantService,
+    // Queue handler
+    LineaQueue,
     // GraphQL Resolvers
     ThreadResolver,
     // Facade (public API for other domains)

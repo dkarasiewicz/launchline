@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ReactAgent } from 'langchain';
 import { LINEA_AGENT } from './tokens';
 import { MemoryService, GraphsFactory } from './services';
+import { AssistantService } from './assistant.service';
 import type {
   GraphContext,
   SourceType,
@@ -10,6 +11,9 @@ import type {
   MemorySearchQuery,
   ProcessWebhookInput,
   ProcessWebhookResult,
+  InboxItemCandidate,
+  InboxItemType,
+  InboxPriority,
 } from './types';
 
 @Injectable()
@@ -21,6 +25,7 @@ export class LineaFacade {
     private readonly agent: ReactAgent,
     private readonly memoryService: MemoryService,
     private readonly graphsFactory: GraphsFactory,
+    private readonly assistantService: AssistantService,
   ) {}
 
   async processWebhook(
@@ -260,5 +265,43 @@ export class LineaFacade {
     return this.agent.getState({
       configurable: { thread_id: threadId },
     });
+  }
+
+  async createInboxThread(input: {
+    workspaceId: string;
+    userId: string;
+    type: InboxItemType;
+    priority: InboxPriority;
+    title: string;
+    summary: string;
+    suggestedActions: string[];
+    sourceMemoryIds: string[];
+    entityRefs: {
+      ticketIds?: string[];
+      prIds?: string[];
+      userIds?: string[];
+      teamIds?: string[];
+    };
+  }): Promise<{ remoteId: string }> {
+    const candidate: InboxItemCandidate = {
+      id: `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      workspaceId: input.workspaceId,
+      type: input.type,
+      priority: input.priority,
+      title: input.title,
+      summary: input.summary,
+      confidence: 1,
+      sourceMemoryIds: input.sourceMemoryIds,
+      suggestedActions: input.suggestedActions,
+      requiresApproval: false,
+      entityRefs: input.entityRefs,
+      createdAt: new Date(),
+    };
+
+    return this.assistantService.createInboxThread(
+      input.workspaceId,
+      input.userId,
+      candidate,
+    );
   }
 }

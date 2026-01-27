@@ -42,6 +42,7 @@ export class AuthService {
       name: userRecord.fullName,
       role: userRecord.role as UserRole,
       id: userRecord.id,
+      primaryWorkspaceId: userRecord.primaryWorkspaceId,
     };
   }
 
@@ -255,6 +256,7 @@ export class AuthService {
     userId: string,
     email: string,
     role: UserRole,
+    primaryWorkspaceId: string,
     fullName?: string,
   ): Promise<UserDTO> {
     return this.db.transaction(async (tx) => {
@@ -265,6 +267,7 @@ export class AuthService {
         isEmailVerified: false,
         createdAt: new Date(),
         updatedAt: new Date(),
+        primaryWorkspaceId,
         role,
       });
 
@@ -277,6 +280,7 @@ export class AuthService {
         merchantId: null,
         role,
         id: userId,
+        primaryWorkspaceId,
       };
     });
   }
@@ -291,6 +295,7 @@ export class AuthService {
       name: userData.fullName,
       isVerified: userData.isEmailVerified || false,
       isOnboarded: userData.isOnboardingComplete || false,
+      primaryWorkspaceId: userData.primaryWorkspaceId,
     };
   }
 }

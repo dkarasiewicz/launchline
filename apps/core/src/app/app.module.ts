@@ -86,6 +86,14 @@ import {
               (req as Record<string, unknown> | undefined)?.user ||
               (extra as { request: Record<string, unknown> } | undefined)
                 ?.request?.user;
+            const currentWorkspaceId =
+              (req as Record<string, Record<string, unknown>> | undefined)
+                ?.session.currentWorkspaceId ||
+              (
+                extra as
+                  | { request: Record<string, Record<string, unknown>> }
+                  | undefined
+              )?.request?.session.currentWorkspaceId;
             const marketingId = res
               ? getOrCreateMarketingSessionId(
                   res as Response,
@@ -99,6 +107,7 @@ import {
               user,
               sessionId,
               marketingId,
+              currentWorkspaceId,
             };
           },
           plugins: [

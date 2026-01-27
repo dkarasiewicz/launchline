@@ -9,9 +9,9 @@ import { ApolloClientProvider, PostHogProvider } from '@launchline/ui';
 // Initialize fonts
 
 export const metadata: Metadata = {
-  title: 'Launchline — The execution inbox for product managers',
+  title: 'Launchline - The execution inbox for product managers',
   description:
-    'Launchline watches Linear, Slack, and GitHub — surfaces the things you must act on — so you can unblock teams and deliver with confidence.',
+    'Launchline watches Linear, Slack, and GitHub - surfaces the things you must act on - so you can unblock teams and deliver with confidence.',
   generator: 'v0.app',
   icons: {
     icon: [

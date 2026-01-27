@@ -15,12 +15,21 @@ import { WorkspaceMemberRole } from '@launchline/models';
 export enum Domain {
   AUTH = 'AUTH',
   WORKSPACE = 'WORKSPACE',
+  INTEGRATION = 'INTEGRATION',
 }
 
 export enum EventType {
   AUTH_USER_CREATED = 'AUTH_USER_CREATED',
   WORKSPACE_MEMBER_INVITED = 'WORKSPACE_MEMBER_INVITED',
   WORKSPACE_MEMBER_JOINED = 'WORKSPACE_MEMBER_JOINED',
+  // Integration events
+  INTEGRATION_CONNECTED = 'INTEGRATION_CONNECTED',
+  INTEGRATION_DISCONNECTED = 'INTEGRATION_DISCONNECTED',
+  INTEGRATION_WEBHOOK_RECEIVED = 'INTEGRATION_WEBHOOK_RECEIVED',
+  // Placeholder events for outbox pattern
+  TICKET_STATUS_CHANGED = 'TICKET_STATUS_CHANGED',
+  COMMENT_ADDED = 'COMMENT_ADDED',
+  CODE_PUSHED = 'CODE_PUSHED',
 }
 
 export enum EventVersion {
@@ -104,10 +113,36 @@ export class WorkspaceMemberJoinedEventPayload {
   emittedAt!: string;
 }
 
+export class IntegrationConnectedEventPayload {
+  @IsUUID()
+  integrationId!: string;
+
+  @IsUUID()
+  workspaceId!: string;
+
+  @IsUUID()
+  userId!: string;
+
+  @IsString()
+  integrationType!: string; // 'linear' | 'slack' | 'github' etc.
+
+  @IsString()
+  @IsOptional()
+  externalAccountId?: string;
+
+  @IsString()
+  @IsOptional()
+  externalAccountName?: string;
+
+  @IsDateString()
+  emittedAt!: string;
+}
+
 export type EventPayload =
   | AuthUserCreatedEventPayload
   | WorkspaceMemberInvitedEventPayload
-  | WorkspaceMemberJoinedEventPayload;
+  | WorkspaceMemberJoinedEventPayload
+  | IntegrationConnectedEventPayload;
 
 export abstract class DomainEvent<T extends EventPayload> {
   @IsUUID()
@@ -213,13 +248,38 @@ export class WorkspaceMemberJoinedEvent extends DomainEvent<WorkspaceMemberJoine
   }
 }
 
+export class IntegrationConnectedEvent extends DomainEvent<IntegrationConnectedEventPayload> {
+  @Type(() => IntegrationConnectedEventPayload)
+  payload!: IntegrationConnectedEventPayload;
+
+  constructor(
+    payload: Pick<
+      IntegrationConnectedEventPayload,
+      keyof IntegrationConnectedEventPayload
+    >,
+    userId?: string,
+  ) {
+    super(
+      randomUUID(),
+      EventVersion.V1,
+      EventType.INTEGRATION_CONNECTED,
+      Domain.INTEGRATION,
+      userId,
+    );
+
+    this.payload = plainToInstance(IntegrationConnectedEventPayload, payload);
+  }
+}
+
 export type DomainEventType =
   | AuthUserCreatedEvent
   | WorkspaceMemberInvitedEvent
-  | WorkspaceMemberJoinedEvent;
+  | WorkspaceMemberJoinedEvent
+  | IntegrationConnectedEvent;
 
 export const EventTypeToDomainEventMap = {
   [EventType.AUTH_USER_CREATED]: AuthUserCreatedEvent,
   [EventType.WORKSPACE_MEMBER_INVITED]: WorkspaceMemberInvitedEvent,
   [EventType.WORKSPACE_MEMBER_JOINED]: WorkspaceMemberJoinedEvent,
+  [EventType.INTEGRATION_CONNECTED]: IntegrationConnectedEvent,
 };
