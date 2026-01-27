@@ -35,7 +35,7 @@ By contributing, you agree that:
 - Reviewers should respond within 48 hours if possible; indicate blockers early.
 - Authors: address feedback promptly and squash/fixup commits as requested.
 - Prefer clarity over cleverness. Include unit/integration tests for behavior changes.
-- The community can shape the roadmap — thoughtful contributions are welcome.
+- The community can shape the roadmap - thoughtful contributions are welcome.
 
 ## Branching & commit messages
 - Branch names: feature/<short-desc>, fix/<short-desc>, chore/<short-desc>.
@@ -62,4 +62,4 @@ By contributing, you agree that:
 - PR template: .github/PULL_REQUEST_TEMPLATE.md
 - License: LICENSE (BSL 1.1 for core, MIT for SDKs)
 
-Thank you for contributing — clear, small, and tested changes are the fastest path to merge. Built in the open, for the community.
+Thank you for contributing - clear, small, and tested changes are the fastest path to merge. Built in the open, for the community.

@@ -5,18 +5,20 @@ const openSourceBenefits = [
   {
     icon: Code2,
     title: 'Transparent by design',
-    description: 'Audit the code. Understand the logic. No black boxes.',
+    description:
+      'Audit the code. Understand the logic. No black boxes or hidden metrics.',
   },
   {
     icon: Users,
     title: 'Community-driven',
-    description: 'Contribute features, report issues, and shape the roadmap.',
+    description:
+      'Contribute features, report issues, and help shape how teams work.',
   },
   {
     icon: Shield,
     title: 'Self-host if you want',
     description:
-      'Run Launchline on your own infrastructure. You own your data.',
+      'Run Launchline on your own infrastructure. Your data, your rules.',
   },
 ];
 

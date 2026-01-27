@@ -22,8 +22,8 @@ export function PricingSection() {
             Join the founding users
           </h2>
           <p className="text-base text-muted-foreground max-w-lg mx-auto leading-relaxed">
-            We're onboarding a small group of PMs to shape Launchline together.
-            Limited spots available.
+            We're onboarding a small group of teams who want transparency
+            without micromanagement. Limited spots available.
           </p>
         </div>
 

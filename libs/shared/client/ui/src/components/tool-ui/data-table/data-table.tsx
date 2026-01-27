@@ -301,7 +301,7 @@ function CellValue<T extends Record<string, unknown>>({
   locale: string;
 }) {
   if (value === null || value === undefined) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className="text-muted-foreground">-</span>;
   }
 
   const format = column.format;
