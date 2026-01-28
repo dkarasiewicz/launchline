@@ -20,6 +20,7 @@ import {
   EventBusService,
   IntegrationConnectedEvent,
   integration,
+  integrationOAuthState,
 } from '@launchline/core-common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq, and } from 'drizzle-orm';
@@ -36,11 +37,16 @@ export class IntegrationService {
     private readonly eventBusService: EventBusService,
   ) {
     // Get encryption key from config (should be 32 bytes for AES-256)
-    const key = this.configService.get<string>('INTEGRATION_ENCRYPTION_KEY');
+    const key = this.configService.get<string>('integration.encryptionKey');
+    if (!key || key === 'CHANGE_ME_IN_PRODUCTION_USE_32_BYTE_HEX_STRING') {
+      this.logger.warn(
+        'Using default encryption key - please set INTEGRATION_ENCRYPTION_KEY in production',
+      );
+    }
     this.encryptionKey = Buffer.from(
       key || randomBytes(32).toString('hex'),
       'hex',
-    );
+    ).slice(0, 32); // Ensure exactly 32 bytes
 
     // Initialize integration configs
     this.integrationConfigs = this.loadIntegrationConfigs();
@@ -50,9 +56,11 @@ export class IntegrationService {
     const configs = new Map<IntegrationType, IntegrationConfig>();
 
     // Linear
-    const linearClientId = this.configService.get<string>('LINEAR_CLIENT_ID');
+    const linearClientId = this.configService.get<string>(
+      'integration.linear.clientId',
+    );
     const linearClientSecret = this.configService.get<string>(
-      'LINEAR_CLIENT_SECRET',
+      'integration.linear.clientSecret',
     );
     if (linearClientId && linearClientSecret) {
       configs.set(IntegrationType.LINEAR, {
@@ -62,14 +70,16 @@ export class IntegrationService {
         authorizationUrl: 'https://linear.app/oauth/authorize',
         tokenUrl: 'https://api.linear.app/oauth/token',
         scopes: ['read', 'write', 'issues:create', 'comments:create'],
-        webhookPath: '/api/webhooks/linear',
+        webhookPath: '/api/integrations/webhooks/linear',
       });
     }
 
     // Slack
-    const slackClientId = this.configService.get<string>('SLACK_CLIENT_ID');
+    const slackClientId = this.configService.get<string>(
+      'integration.slack.clientId',
+    );
     const slackClientSecret = this.configService.get<string>(
-      'SLACK_CLIENT_SECRET',
+      'integration.slack.clientSecret',
     );
     if (slackClientId && slackClientSecret) {
       configs.set(IntegrationType.SLACK, {
@@ -84,14 +94,16 @@ export class IntegrationService {
           'chat:write',
           'users:read',
         ],
-        webhookPath: '/api/webhooks/slack',
+        webhookPath: '/api/integrations/webhooks/slack',
       });
     }
 
     // GitHub
-    const githubClientId = this.configService.get<string>('GITHUB_CLIENT_ID');
+    const githubClientId = this.configService.get<string>(
+      'integration.github.clientId',
+    );
     const githubClientSecret = this.configService.get<string>(
-      'GITHUB_CLIENT_SECRET',
+      'integration.github.clientSecret',
     );
     if (githubClientId && githubClientSecret) {
       configs.set(IntegrationType.GITHUB, {
@@ -101,7 +113,7 @@ export class IntegrationService {
         authorizationUrl: 'https://github.com/login/oauth/authorize',
         tokenUrl: 'https://github.com/login/oauth/access_token',
         scopes: ['repo', 'read:user', 'read:org'],
-        webhookPath: '/api/webhooks/github',
+        webhookPath: '/api/integrations/webhooks/github',
       });
     }
 
@@ -115,13 +127,16 @@ export class IntegrationService {
   async startOAuth(
     userId: string,
     type: IntegrationType,
-    workspaceId: string,
     redirectUrl?: string,
   ): Promise<{ authorizationUrl: string; state: string; workspaceId: string }> {
     const config = this.integrationConfigs.get(type);
     if (!config) {
       throw new Error(`Integration type ${type} is not configured`);
     }
+
+    // For now, use the user's primary workspace
+    // In a real implementation, this should be passed from the frontend
+    const workspaceId = 'default-workspace-id'; // TODO: Get from user context
 
     // Generate state for CSRF protection
     const state = randomBytes(32).toString('hex');
@@ -147,8 +162,7 @@ export class IntegrationService {
     });
 
     // Build authorization URL
-    const baseUrl =
-      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const baseUrl = this.configService.get<string>('app.url');
     const callbackUrl = `${baseUrl}/api/integrations/oauth/${type}/callback`;
 
     const params = new URLSearchParams({
@@ -210,8 +224,7 @@ export class IntegrationService {
     // Create or update integration
     const integrationId = randomUUID();
     const webhookSecret = randomBytes(32).toString('hex');
-    const baseUrl =
-      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const baseUrl = this.configService.get<string>('app.url');
 
     const integrationData: StoredIntegration = {
       id: integrationId,
@@ -259,6 +272,18 @@ export class IntegrationService {
       `Created integration ${integrationId} for workspace ${oauthState.workspaceId}`,
     );
 
+    // Register webhook for Linear integration
+    if (oauthState.type === IntegrationType.LINEAR) {
+      try {
+        await this.registerLinearWebhook(integrationId, tokens.accessToken);
+      } catch (err) {
+        this.logger.error(
+          `Failed to register Linear webhook for integration ${integrationId}: ${err}`,
+        );
+        // Don't fail the OAuth flow if webhook registration fails
+      }
+    }
+
     // Emit integration connected event
     await this.eventBusService.publish(
       new IntegrationConnectedEvent(
@@ -282,9 +307,8 @@ export class IntegrationService {
     code: string,
     config: IntegrationConfig,
   ): Promise<OAuthTokens> {
-    const baseUrl =
-      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
-    const callbackUrl = `${baseUrl}/api/integrations/oauth/callback`;
+    const baseUrl = this.configService.get<string>('app.url');
+    const callbackUrl = `${baseUrl}/api/integrations/oauth/${config.type}/callback`;
 
     const response = await fetch(config.tokenUrl, {
       method: 'POST',
@@ -529,6 +553,78 @@ export class IntegrationService {
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
+  }
+
+  // ============================================================================
+  // Webhook Registration
+  // ============================================================================
+
+  private async registerLinearWebhook(
+    integrationId: string,
+    accessToken: string,
+  ): Promise<void> {
+    const storedIntegration = await this.getIntegration(integrationId);
+    if (!storedIntegration || !storedIntegration.webhookUrl) {
+      throw new Error('Integration or webhook URL not found');
+    }
+
+    // Use Linear GraphQL API to create webhook
+    const mutation = `
+      mutation CreateWebhook($url: String!, $resourceTypes: [String!]!) {
+        webhookCreate(input: { url: $url, resourceTypes: $resourceTypes }) {
+          success
+          webhook {
+            id
+            url
+            enabled
+          }
+        }
+      }
+    `;
+
+    const response = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        query: mutation,
+        variables: {
+          url: storedIntegration.webhookUrl,
+          resourceTypes: [
+            'Issue',
+            'Comment',
+            'Project',
+            'Cycle',
+            'IssueLabel',
+          ],
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      this.logger.error(`Linear webhook registration failed: ${error}`);
+      throw new Error('Failed to register Linear webhook');
+    }
+
+    const data = await response.json();
+
+    if (data.errors) {
+      this.logger.error(
+        `Linear webhook registration errors: ${JSON.stringify(data.errors)}`,
+      );
+      throw new Error('Failed to register Linear webhook');
+    }
+
+    if (data.data?.webhookCreate?.success) {
+      this.logger.log(
+        `Successfully registered Linear webhook for integration ${integrationId}`,
+      );
+    } else {
+      throw new Error('Linear webhook creation was not successful');
+    }
   }
 
   // ============================================================================

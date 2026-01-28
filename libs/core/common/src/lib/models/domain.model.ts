@@ -138,11 +138,28 @@ export class IntegrationConnectedEventPayload {
   emittedAt!: string;
 }
 
+export class IntegrationWebhookReceivedEventPayload {
+  @IsUUID()
+  integrationId!: string;
+
+  @IsUUID()
+  workspaceId!: string;
+
+  @IsString()
+  integrationType!: string;
+
+  webhookPayload!: Record<string, unknown>;
+
+  @IsDateString()
+  receivedAt!: string;
+}
+
 export type EventPayload =
   | AuthUserCreatedEventPayload
   | WorkspaceMemberInvitedEventPayload
   | WorkspaceMemberJoinedEventPayload
-  | IntegrationConnectedEventPayload;
+  | IntegrationConnectedEventPayload
+  | IntegrationWebhookReceivedEventPayload;
 
 export abstract class DomainEvent<T extends EventPayload> {
   @IsUUID()
@@ -271,15 +288,43 @@ export class IntegrationConnectedEvent extends DomainEvent<IntegrationConnectedE
   }
 }
 
+export class IntegrationWebhookReceivedEvent extends DomainEvent<IntegrationWebhookReceivedEventPayload> {
+  @Type(() => IntegrationWebhookReceivedEventPayload)
+  payload!: IntegrationWebhookReceivedEventPayload;
+
+  constructor(
+    payload: Pick<
+      IntegrationWebhookReceivedEventPayload,
+      keyof IntegrationWebhookReceivedEventPayload
+    >,
+    userId?: string,
+  ) {
+    super(
+      randomUUID(),
+      EventVersion.V1,
+      EventType.INTEGRATION_WEBHOOK_RECEIVED,
+      Domain.INTEGRATION,
+      userId,
+    );
+
+    this.payload = plainToInstance(
+      IntegrationWebhookReceivedEventPayload,
+      payload,
+    );
+  }
+}
+
 export type DomainEventType =
   | AuthUserCreatedEvent
   | WorkspaceMemberInvitedEvent
   | WorkspaceMemberJoinedEvent
-  | IntegrationConnectedEvent;
+  | IntegrationConnectedEvent
+  | IntegrationWebhookReceivedEvent;
 
 export const EventTypeToDomainEventMap = {
   [EventType.AUTH_USER_CREATED]: AuthUserCreatedEvent,
   [EventType.WORKSPACE_MEMBER_INVITED]: WorkspaceMemberInvitedEvent,
   [EventType.WORKSPACE_MEMBER_JOINED]: WorkspaceMemberJoinedEvent,
   [EventType.INTEGRATION_CONNECTED]: IntegrationConnectedEvent,
+  [EventType.INTEGRATION_WEBHOOK_RECEIVED]: IntegrationWebhookReceivedEvent,
 };

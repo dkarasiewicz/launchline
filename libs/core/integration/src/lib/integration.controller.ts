@@ -15,6 +15,7 @@ import {
   VERSION_NEUTRAL,
   RawBodyRequest,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -22,9 +23,15 @@ import {
   AuthenticatedUser,
   CurrentUser,
   Public,
+  EventBusService,
+  DB_CONNECTION,
+  integration,
 } from '@launchline/core-common';
 import { IntegrationService } from './integration.service';
 import { IntegrationType } from './integration.models';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { eq } from 'drizzle-orm';
+import { createHmac } from 'crypto';
 
 interface OAuthSessionData {
   oauthState?: string;
@@ -41,6 +48,8 @@ export class IntegrationController {
   constructor(
     private readonly integrationService: IntegrationService,
     private readonly configService: ConfigService,
+    private readonly eventBusService: EventBusService,
+    @Inject(DB_CONNECTION) private readonly db: NodePgDatabase,
   ) {}
 
   // ============================================================================
@@ -89,9 +98,7 @@ export class IntegrationController {
       return res.redirect(authorizationUrl);
     } catch (err) {
       this.logger.error(`OAuth init error: ${err}`);
-      const frontendUrl =
-        this.configService.get<string>('FRONTEND_URL') ||
-        'http://localhost:4200';
+      const frontendUrl = this.configService.get<string>('app.frontendUrl');
       return res.redirect(
         `${frontendUrl}/settings/integrations?error=oauth_init_failed&error_description=${encodeURIComponent(err instanceof Error ? err.message : 'Unknown error')}`,
       );
@@ -113,8 +120,7 @@ export class IntegrationController {
     @Session() session: OAuthSessionData,
     @Res() res: Response,
   ) {
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+    const frontendUrl = this.configService.get<string>('app.frontendUrl');
     const redirectUrl =
       session.oauthRedirectUrl || `${frontendUrl}/settings/integrations`;
 
@@ -276,18 +282,94 @@ export class IntegrationController {
     rawBody: string,
     signature?: string,
   ): Promise<{ received: boolean }> {
-    // In a real implementation, you would:
-    // 1. Find the integration by type/workspace
-    // 2. Verify the webhook signature
-    // 3. Store the webhook delivery for processing
-    // 4. Publish an event to RabbitMQ for async processing
-
     this.logger.log(`Processing ${type} webhook`, {
       payloadKeys: Object.keys(payload),
       hasSignature: !!signature,
     });
 
-    // For now, just acknowledge receipt
+    // Find the integration by type
+    // For Linear, we look for the first active Linear integration
+    // In a multi-tenant setup, you might need to identify the workspace from the webhook
+    const [integrationRecord] = await this.db
+      .select()
+      .from(integration)
+      .where(eq(integration.type, type))
+      .limit(1);
+
+    if (!integrationRecord) {
+      this.logger.warn(`No ${type} integration found for webhook`);
+      return { received: true }; // Return 200 to avoid retries
+    }
+
+    // Verify webhook signature
+    if (signature && integrationRecord.webhookSecret) {
+      const isValid = await this.verifyWebhookSignature(
+        type,
+        rawBody,
+        signature,
+        integrationRecord.webhookSecret,
+      );
+
+      if (!isValid) {
+        this.logger.error(`Invalid webhook signature for ${type}`);
+        throw new BadRequestException('Invalid webhook signature');
+      }
+    }
+
+    // Publish webhook event to RabbitMQ for async processing
+    await this.eventBusService.publish({
+      id: `webhook-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      version: 'V1' as any,
+      eventType: 'INTEGRATION_WEBHOOK_RECEIVED' as any,
+      origin: 'INTEGRATION' as any,
+      payload: {
+        integrationId: integrationRecord.id,
+        workspaceId: integrationRecord.workspaceId,
+        integrationType: type,
+        webhookPayload: payload,
+        receivedAt: new Date().toISOString(),
+      } as any,
+    } as any);
+
+    this.logger.debug(`Published ${type} webhook to event bus`);
+
     return { received: true };
+  }
+
+  private async verifyWebhookSignature(
+    type: IntegrationType,
+    rawBody: string,
+    signature: string,
+    webhookSecret: string,
+  ): Promise<boolean> {
+    switch (type) {
+      case IntegrationType.LINEAR: {
+        // Linear uses HMAC SHA256
+        const expectedSignature = createHmac('sha256', webhookSecret)
+          .update(rawBody)
+          .digest('hex');
+        return signature === expectedSignature;
+      }
+
+      case IntegrationType.SLACK: {
+        // Slack signature verification is more complex (involves timestamp)
+        // For now, basic HMAC check
+        const expectedSignature = createHmac('sha256', webhookSecret)
+          .update(rawBody)
+          .digest('hex');
+        return signature.includes(expectedSignature);
+      }
+
+      case IntegrationType.GITHUB: {
+        // GitHub uses sha256=<signature>
+        const expectedSignature =
+          'sha256=' +
+          createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+        return signature === expectedSignature;
+      }
+
+      default:
+        return false;
+    }
   }
 }

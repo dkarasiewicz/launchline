@@ -4,9 +4,10 @@ import { IntegrationResolver } from './integration.resolver';
 import { IntegrationService } from './integration.service';
 import { IntegrationQueue } from './integration.queue';
 import { IntegrationFacade } from './integration.facade';
+import { LineaModule } from '@launchline/core-linea';
 
 @Module({
-  imports: [],
+  imports: [LineaModule],
   controllers: [IntegrationController],
   providers: [
     IntegrationService,

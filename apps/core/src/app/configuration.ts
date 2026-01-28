@@ -76,6 +76,25 @@ const configSchema = z.object({
     host: z.optional(z.string()),
     disabled: z.optional(z.boolean()),
   }),
+  integration: z.object({
+    encryptionKey: z.string(),
+    linear: z.object({
+      clientId: z.optional(z.string()),
+      clientSecret: z.optional(z.string()),
+    }),
+    slack: z.object({
+      clientId: z.optional(z.string()),
+      clientSecret: z.optional(z.string()),
+    }),
+    github: z.object({
+      clientId: z.optional(z.string()),
+      clientSecret: z.optional(z.string()),
+    }),
+  }),
+  app: z.object({
+    url: z.string(),
+    frontendUrl: z.string(),
+  }),
 });
 
 export const config = () => ({
@@ -190,6 +209,27 @@ export const config = () => ({
     apiKey: process.env.POSTHOG_API_KEY,
     host: process.env.POSTHOG_HOST,
     disabled: process.env.POSTHOG_DISABLED === 'true',
+  },
+  integration: {
+    encryptionKey:
+      process.env.INTEGRATION_ENCRYPTION_KEY ||
+      'CHANGE_ME_IN_PRODUCTION_USE_32_BYTE_HEX_STRING',
+    linear: {
+      clientId: process.env.LINEAR_CLIENT_ID,
+      clientSecret: process.env.LINEAR_CLIENT_SECRET,
+    },
+    slack: {
+      clientId: process.env.SLACK_CLIENT_ID,
+      clientSecret: process.env.SLACK_CLIENT_SECRET,
+    },
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+    },
+  },
+  app: {
+    url: process.env.APP_URL || 'http://localhost:3000',
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
   },
 });
 

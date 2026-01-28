@@ -305,3 +305,38 @@ export const webhookDelivery = pgTable(
       .onDelete('cascade'),
   ],
 );
+
+/**
+ * OAuth State table - stores OAuth state for CSRF protection during OAuth flows
+ */
+export const integrationOAuthState = pgTable(
+  'IntegrationOAuthState',
+  {
+    id: text().primaryKey().notNull(),
+    createdAt: timestamp({ precision: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp({ precision: 3 }).notNull(),
+
+    // OAuth state token
+    state: text().notNull(),
+
+    // Serialized OAuth state data (JSON)
+    data: text().notNull(),
+
+    // Expiration
+    expiresAt: timestamp({ precision: 3 }).notNull(),
+
+    // Whether this state has been consumed
+    consumed: boolean().default(false).notNull(),
+  },
+  (table) => [
+    uniqueIndex('IntegrationOAuthState_state_key').using(
+      'btree',
+      table.state.asc().nullsLast().op('text_ops'),
+    ),
+    index('IntegrationOAuthState_expiresAt_idx').using(
+      'btree',
+      table.expiresAt.asc().nullsLast().op('timestamp_ops'),
+    ),
+    index('IntegrationOAuthState_consumed_idx').using('btree', table.consumed),
+  ],
+);
