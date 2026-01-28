@@ -13,6 +13,7 @@ import {
   GraphsFactory,
   OnboardingGraphsFactory,
   AgentFactory,
+  MCPToolsFactory,
 } from './services';
 import {
   LINEA_AGENT,
@@ -37,6 +38,7 @@ import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
     MemoryService,
     // Factories
     ToolsFactory,
+    MCPToolsFactory,
     SubagentsFactory,
     AgentFactory,
     GraphsFactory,
