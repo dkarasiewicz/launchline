@@ -68,6 +68,15 @@ registerEnumType(InboxStatus, {
   description: 'The status of an inbox item',
 });
 
+export enum LineaEventType {
+  INBOX_ITEM_CREATED = 'inbox_item_created',
+}
+
+registerEnumType(LineaEventType, {
+  name: 'LineaEventType',
+  description: 'Linea change event type',
+});
+
 @ObjectType()
 export class Thread {
   @Field()
@@ -106,6 +115,18 @@ export class Thread {
 
   @Field({ nullable: true })
   featureId?: string;
+}
+
+@ObjectType()
+export class LineaChangeEvent {
+  @Field()
+  id!: string;
+
+  @Field(() => LineaEventType)
+  type!: LineaEventType;
+
+  @Field()
+  changedAt!: Date;
 }
 
 @ObjectType()

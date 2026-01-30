@@ -41,12 +41,6 @@ export function Navbar() {
             >
               Integrations
             </a>
-            <Link
-              href="/demo/onboarding"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Demo
-            </Link>
           </div>
 
           <div className="hidden md:flex items-center gap-3">

@@ -134,6 +134,43 @@ export class IntegrationConnectedEventPayload {
   @IsOptional()
   externalAccountName?: string;
 
+  @IsString()
+  @IsOptional()
+  externalOrganizationId?: string;
+
+  @IsString()
+  @IsOptional()
+  externalOrganizationName?: string;
+
+  @IsDateString()
+  emittedAt!: string;
+}
+
+export class IntegrationWebhookReceivedEventPayload {
+  @IsUUID()
+  integrationId!: string;
+
+  @IsUUID()
+  workspaceId!: string;
+
+  @IsString()
+  integrationType!: string;
+
+  @IsString()
+  eventType!: string; // e.g., 'Issue', 'Comment', 'Project'
+
+  @IsString()
+  @IsOptional()
+  action?: string; // e.g., 'create', 'update', 'remove'
+
+  @IsString()
+  @IsOptional()
+  externalEventId?: string;
+
+  // JSON-stringified payload from the webhook
+  @IsString()
+  payload!: string;
+
   @IsDateString()
   emittedAt!: string;
 }
@@ -142,7 +179,8 @@ export type EventPayload =
   | AuthUserCreatedEventPayload
   | WorkspaceMemberInvitedEventPayload
   | WorkspaceMemberJoinedEventPayload
-  | IntegrationConnectedEventPayload;
+  | IntegrationConnectedEventPayload
+  | IntegrationWebhookReceivedEventPayload;
 
 export abstract class DomainEvent<T extends EventPayload> {
   @IsUUID()
@@ -271,15 +309,43 @@ export class IntegrationConnectedEvent extends DomainEvent<IntegrationConnectedE
   }
 }
 
+export class IntegrationWebhookReceivedEvent extends DomainEvent<IntegrationWebhookReceivedEventPayload> {
+  @Type(() => IntegrationWebhookReceivedEventPayload)
+  payload!: IntegrationWebhookReceivedEventPayload;
+
+  constructor(
+    payload: Pick<
+      IntegrationWebhookReceivedEventPayload,
+      keyof IntegrationWebhookReceivedEventPayload
+    >,
+    userId?: string,
+  ) {
+    super(
+      randomUUID(),
+      EventVersion.V1,
+      EventType.INTEGRATION_WEBHOOK_RECEIVED,
+      Domain.INTEGRATION,
+      userId,
+    );
+
+    this.payload = plainToInstance(
+      IntegrationWebhookReceivedEventPayload,
+      payload,
+    );
+  }
+}
+
 export type DomainEventType =
   | AuthUserCreatedEvent
   | WorkspaceMemberInvitedEvent
   | WorkspaceMemberJoinedEvent
-  | IntegrationConnectedEvent;
+  | IntegrationConnectedEvent
+  | IntegrationWebhookReceivedEvent;
 
 export const EventTypeToDomainEventMap = {
   [EventType.AUTH_USER_CREATED]: AuthUserCreatedEvent,
   [EventType.WORKSPACE_MEMBER_INVITED]: WorkspaceMemberInvitedEvent,
   [EventType.WORKSPACE_MEMBER_JOINED]: WorkspaceMemberJoinedEvent,
   [EventType.INTEGRATION_CONNECTED]: IntegrationConnectedEvent,
+  [EventType.INTEGRATION_WEBHOOK_RECEIVED]: IntegrationWebhookReceivedEvent,
 };

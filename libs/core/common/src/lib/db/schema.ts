@@ -214,94 +214,24 @@ export const integration = pgTable(
     id: text().primaryKey().notNull(),
     createdAt: timestamp({ precision: 3 }).defaultNow().notNull(),
     updatedAt: timestamp({ precision: 3 }).notNull(),
-
-    // // Workspace association
     workspaceId: text().notNull(),
-    //
-    // // Integration type and status
     type: integrationType().notNull(),
     status: integrationStatus().default('pending').notNull(),
-    //
-    // // User-defined metadata
     name: text(),
     description: text(),
-    //
-    // // External account info
     externalAccountId: text(),
     externalAccountName: text(),
-    //
-    // // OAuth2 scopes
-    scopes: text().array().default([]).notNull(),
-    //
-    // // Webhook configuration
-    webhookUrl: text(),
-    webhookSecret: text(),
-    //
-    // // OAuth2 tokens (encrypted)
+    externalOrganizationId: text(),
+    externalOrganizationName: text(),
+    scopes: text(),
     accessToken: text(),
     refreshToken: text(),
-    tokenType: text(),
     tokenExpiresAt: timestamp({ precision: 3 }),
-    //
-    // // Sync metadata
     lastSyncAt: timestamp({ precision: 3 }),
   },
   (table) => [
     index('Integration_workspaceId_idx').using('btree', table.workspaceId),
     index('Integration_type_idx').using('btree', table.type),
     index('Integration_status_idx').using('btree', table.status),
-    foreignKey({
-      columns: [table.workspaceId],
-      foreignColumns: [workspace.id],
-      name: 'Integration_workspaceId_fkey',
-    })
-      .onUpdate('cascade')
-      .onDelete('cascade'),
-  ],
-);
-
-/**
- * Webhook Delivery table - stores incoming webhook events for processing
- */
-export const webhookDelivery = pgTable(
-  'WebhookDelivery',
-  {
-    id: text().primaryKey().notNull(),
-    createdAt: timestamp({ precision: 3 }).defaultNow().notNull(),
-    updatedAt: timestamp({ precision: 3 }).notNull(),
-
-    // Integration association
-    integrationId: text().notNull(),
-
-    // Event metadata
-    eventType: text().notNull(),
-    externalEventId: text(),
-
-    // Payload (JSON string)
-    payload: text().notNull(),
-
-    // Processing status
-    processed: boolean().default(false).notNull(),
-    processedAt: timestamp({ precision: 3 }),
-
-    // Error handling
-    success: boolean(),
-    errorMessage: text(),
-    retryCount: integer().default(0).notNull(),
-  },
-  (table) => [
-    index('WebhookDelivery_integrationId_idx').using(
-      'btree',
-      table.integrationId,
-    ),
-    index('WebhookDelivery_eventType_idx').using('btree', table.eventType),
-    index('WebhookDelivery_processed_idx').using('btree', table.processed),
-    foreignKey({
-      columns: [table.integrationId],
-      foreignColumns: [integration.id],
-      name: 'WebhookDelivery_integrationId_fkey',
-    })
-      .onUpdate('cascade')
-      .onDelete('cascade'),
   ],
 );

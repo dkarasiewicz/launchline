@@ -2,4 +2,10 @@
  * Memories Tool UI Index
  */
 
-export { SearchMemoriesToolUI } from "./memories";
+export {
+  SearchMemoriesToolUI,
+  SaveMemoryToolUI,
+  GetBlockersToolUI,
+  GetDecisionsToolUI,
+  ResolveIdentityToolUI,
+} from './memories';

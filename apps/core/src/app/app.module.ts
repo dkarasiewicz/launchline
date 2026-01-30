@@ -22,6 +22,7 @@ import {
 } from '@launchline/core-common';
 import { AuthModule } from '@launchline/core-auth';
 import { WorkspaceModule } from '@launchline/core-workspace';
+import { IntegrationModule } from '@launchline/core-integration';
 import { LineaModule } from '@launchline/core-linea';
 import { config, validate } from './configuration';
 import {
@@ -166,6 +167,7 @@ import {
     CommonModule,
     AuthModule,
     WorkspaceModule,
+    IntegrationModule,
     LineaModule,
   ],
 })

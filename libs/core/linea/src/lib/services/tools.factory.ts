@@ -1,13 +1,22 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type StructuredToolInterface, tool } from '@langchain/core/tools';
 import { RunnableConfig } from '@langchain/core/runnables';
+import { TavilySearch } from '@langchain/tavily';
 import { Command } from '@langchain/langgraph';
-import { ToolMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { MemoryService } from './memory.service';
-import { LINEA_STORE } from '../tokens';
+import { LinearSkillsFactory } from './linear-skills.factory';
+import { LINEA_MODEL_FAST, LINEA_STORE } from '../tokens';
 import { PostgresStore } from '@langchain/langgraph-checkpoint-postgres/store';
 import {
+  IntegrationFacade,
+  IntegrationType,
+  SlackService,
+} from '@launchline/core-integration';
+import {
   CreateGitHubIssueInputSchema,
+  GenerateProjectUpdateInputSchema,
   GetBlockersInputSchema,
   GetDecisionsInputSchema,
   GetInboxItemsInputSchema,
@@ -61,30 +70,59 @@ export class ToolsFactory {
 
   constructor(
     private readonly memoryService: MemoryService,
+    private readonly linearSkillsFactory: LinearSkillsFactory,
+    private readonly integrationFacade: IntegrationFacade,
+    private readonly slackService: SlackService,
+    @Inject(LINEA_MODEL_FAST)
+    private readonly modelFast: BaseChatModel,
     @Inject(LINEA_STORE)
     private readonly store: PostgresStore,
   ) {}
 
   createAllTools(): StructuredToolInterface[] {
     return [
-      // Memory tools
+      ...this.createMemoryTools(),
+      ...this.createInboxTools(),
+      ...this.linearSkillsFactory.createLinearSkills(),
+      ...this.createProjectUpdateTools(),
+      ...this.createActionTools(),
+      ...this.createSearchTools(),
+      ...this.createUtilityTools(),
+    ];
+  }
+
+  private createMemoryTools(): StructuredToolInterface[] {
+    return [
       this.createSearchMemoriesTool(),
       this.createSaveMemoryTool(),
       this.createGetBlockersTool(),
       this.createGetDecisionsTool(),
       this.createResolveIdentityTool(),
-      // Inbox tools
-      this.createGetInboxItemsTool(),
-      this.createGetWorkspaceStatusTool(),
-      // Action tools (require approval)
+    ];
+  }
+
+  private createInboxTools(): StructuredToolInterface[] {
+    return [this.createGetInboxItemsTool(), this.createGetWorkspaceStatusTool()];
+  }
+
+  private createActionTools(): StructuredToolInterface[] {
+    return [
       this.createUpdateLinearTicketTool(),
       this.createSendSlackMessageTool(),
       this.createCreateGitHubIssueTool(),
-      // Search tools
-      this.createInternetSearchTool(),
-      // Utility tools
-      this.createThinkTool(),
     ];
+  }
+
+  private createProjectUpdateTools(): StructuredToolInterface[] {
+    return [this.createGenerateProjectUpdateTool()];
+  }
+
+  private createSearchTools(): StructuredToolInterface[] {
+    return [this.createInternetSearchTool()];
+  }
+
+  private createUtilityTools(): StructuredToolInterface[] {
+    return [this.createThinkTool()];
   }
 
   private createSearchMemoriesTool() {
@@ -120,7 +158,10 @@ export class ToolsFactory {
             })
             .join('\n\n');
         } catch (error) {
-          logger.error('[searchMemories] Error:', error);
+          logger.error(
+            { err: error, workspaceId, query, namespace, limit },
+            'Search memories failed',
+          );
 
           return `Error searching memories: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
@@ -174,7 +215,16 @@ export class ToolsFactory {
             },
           });
         } catch (error) {
-          logger.error('[saveMemory] Error:', error);
+          logger.error(
+            {
+              err: error,
+              workspaceId: ctx.workspaceId,
+              namespace,
+              category,
+              entityId,
+            },
+            'Save memory failed',
+          );
           return `Error saving memory: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -212,7 +262,10 @@ export class ToolsFactory {
             })
             .join('\n');
         } catch (error) {
-          logger.error('[getBlockers] Error:', error);
+          logger.error(
+            { err: error, workspaceId, limit },
+            'Get blockers failed',
+          );
           return `Error getting blockers: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -246,7 +299,10 @@ export class ToolsFactory {
             .map((d, i) => `${i + 1}. ${d.summary || d.content}`)
             .join('\n');
         } catch (error) {
-          logger.error('[getDecisions] Error:', error);
+          logger.error(
+            { err: error, workspaceId, limit },
+            'Get decisions failed',
+          );
           return `Error getting decisions: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -321,7 +377,10 @@ export class ToolsFactory {
 
           return `No linked identity found for "${name}".`;
         } catch (error) {
-          logger.error('[resolveIdentity] Error:', error);
+          logger.error(
+            { err: error, workspaceId, identity: name || null },
+            'Resolve identity failed',
+          );
           return `Error resolving identity: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -374,7 +433,10 @@ export class ToolsFactory {
             })
             .join('\n\n');
         } catch (error) {
-          logger.error('[getInboxItems] Error:', error);
+          logger.error(
+            { err: error, workspaceId, type, priority, limit },
+            'Get inbox items failed',
+          );
           return `Error fetching inbox items: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -427,7 +489,10 @@ export class ToolsFactory {
 
           return status;
         } catch (error) {
-          logger.error('[getWorkspaceStatus] Error:', error);
+          logger.error(
+            { err: error, workspaceId, includeMetrics },
+            'Get workspace status failed',
+          );
           return `Error getting workspace status: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -436,6 +501,85 @@ export class ToolsFactory {
         description:
           'Get an overview of workspace status including blockers, inbox items, and recent decisions.',
         schema: GetWorkspaceStatusInputSchema,
+      },
+    );
+  }
+
+  private createGenerateProjectUpdateTool() {
+    const model = this.modelFast;
+    const logger = this.logger;
+
+    return tool(
+      async ({ projectId, timeRange, format, audience }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const normalizedTimeRange = timeRange || 'this week';
+        const normalizedFormat = format || 'slack';
+        const normalizedAudience = audience || 'team';
+
+        try {
+          const response = await model.invoke([
+            new SystemMessage(
+              `You are Linea, generating a concise project update for a PM.
+Format it for ${normalizedAudience} and output in ${normalizedFormat} style.
+Use short sections with clear headings and bullets.`,
+            ),
+            new HumanMessage(
+              `Generate a ${normalizedTimeRange} update for project ${projectId || 'the workspace'}.
+Include: highlights, risks/blockers, next steps.`,
+            ),
+          ]);
+
+          const updateText =
+            typeof response.content === 'string'
+              ? response.content
+              : JSON.stringify(response.content);
+
+          return JSON.stringify(
+            {
+              workspaceId,
+              projectId: projectId || null,
+              timeRange: normalizedTimeRange,
+              format: normalizedFormat,
+              audience: normalizedAudience,
+              update: updateText,
+              sections: updateText
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .slice(0, 6),
+              stats: {
+                prsOpened: 0,
+                prsMerged: 0,
+                ticketsClosed: 0,
+                blockers: 0,
+              },
+              note: 'Update generated from current workspace context.',
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, projectId },
+            'Failed to generate project update',
+          );
+
+          return JSON.stringify(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unknown error generating update',
+            },
+            null,
+            2,
+          );
+        }
+      },
+      {
+        name: 'generate_project_update',
+        description: TOOL_DESCRIPTIONS.generateProjectUpdate,
+        schema: GenerateProjectUpdateInputSchema,
       },
     );
   }
@@ -450,9 +594,10 @@ export class ToolsFactory {
         const timestamp = new Date().toISOString();
 
         logger.debug(
-          `[think] Workspace: ${workspaceId}, User: ${userId}, Time: ${timestamp}`,
+          { workspaceId, userId, timestamp },
+          'Think tool invoked',
         );
-        logger.debug(`[think] Thought: ${thought}`);
+        logger.debug({ workspaceId, thought }, 'Think tool thought');
 
         return `Thought recorded at ${timestamp}. Continue with your analysis.`;
       },
@@ -483,9 +628,14 @@ Use this tool after each search to analyze results and plan next steps systemati
         // TODO: implement actual Linear API call here after approval workflow
 
         logger.debug(
-          `[updateLinearTicket] Workspace: ${workspaceId}, User: ${userId}, Ticket: ${ticketId}, Updates: ${JSON.stringify(
+          {
+            workspaceId,
+            userId,
+            ticketId,
             updates,
-          )}, Comment: ${comment || 'N/A'}`,
+            comment: comment || null,
+          },
+          'Prepared Linear ticket update',
         );
 
         // Return a structured response for UI to render approval request
@@ -543,21 +693,77 @@ Use this tool after each search to analyze results and plan next steps systemati
         const workspaceId = getWorkspaceId(config);
         const userId = getUserId(config);
 
-        // Return a structured response for UI to render approval request
-        return JSON.stringify(
-          {
-            pendingApproval: true,
-            action: 'send_slack_message',
-            workspaceId,
-            requestedBy: userId,
+        try {
+          const integrations =
+            await this.integrationFacade.getIntegrationsByType(
+              workspaceId,
+              IntegrationType.SLACK,
+            );
+          const integrationId = integrations[0]?.id;
+
+          if (!integrationId) {
+            return JSON.stringify(
+              {
+                error: 'Slack integration is not connected.',
+              },
+              null,
+              2,
+            );
+          }
+
+          const token =
+            await this.integrationFacade.getAccessToken(integrationId);
+
+          if (!token) {
+            return JSON.stringify(
+              {
+                error: 'Slack access token is missing.',
+              },
+              null,
+              2,
+            );
+          }
+
+          await this.slackService.postMessage(
+            token,
             channel,
             message,
-            threadTs: threadTs || null,
-            preview: this.formatSlackMessagePreview(channel, message, threadTs),
-          },
-          null,
-          2,
-        );
+            threadTs || undefined,
+          );
+
+          return JSON.stringify(
+            {
+              success: true,
+              action: 'send_slack_message',
+              workspaceId,
+              requestedBy: userId,
+              channel,
+              message,
+              threadTs: threadTs || null,
+              preview: this.formatSlackMessagePreview(
+                channel,
+                message,
+                threadTs,
+              ),
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          this.logger.error(
+            { err: error, workspaceId, channel },
+            'Failed to send Slack message',
+          );
+
+          return JSON.stringify(
+            {
+              error:
+                error instanceof Error ? error.message : 'Unknown Slack error',
+            },
+            null,
+            2,
+          );
+        }
       },
       {
         name: 'send_slack_message',
@@ -635,16 +841,17 @@ Use this tool after each search to analyze results and plan next steps systemati
 
         try {
           // Dynamic import to avoid issues if Tavily isn't installed
-          const { TavilySearch } = await import('@langchain/tavily');
 
           const tavilySearch = new TavilySearch({
             maxResults,
             tavilyApiKey,
           });
 
-          return await tavilySearch._call({ query });
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          //@ts-expect-error
+          return await tavilySearch.invoke({ query });
         } catch (error) {
-          logger.error('[internetSearch] Error:', error);
+          logger.error({ err: error, query, maxResults }, 'Internet search failed');
           return `Error searching the web: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },

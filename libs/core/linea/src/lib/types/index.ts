@@ -87,7 +87,8 @@ export type MemoryCategory =
   | 'assignment'
   | 'insight'
   | 'risk'
-  | 'achievement';
+  | 'achievement'
+  | 'instruction';
 
 export interface MemoryItem {
   id: string;
@@ -188,6 +189,7 @@ export interface LinkedIdentity {
 export const InboxItemTypeSchema = z.enum([
   'blocker',
   'drift',
+  'stalled',
   'update',
   'coverage',
   'risk',
@@ -397,6 +399,7 @@ export interface ProcessWebhookResult {
 }
 
 export const ToolMemoryNamespaceSchema = z.enum([
+  'workspace',
   'blocker',
   'decision',
   'progress',
@@ -424,6 +427,7 @@ export const ToolMemoryCategorySchema = z.enum([
   'insight',
   'risk',
   'achievement',
+  'instruction',
 ]);
 
 export const SearchMemoriesInputSchema = z.object({
@@ -536,6 +540,13 @@ export const SendSlackMessageInputSchema = z.object({
   threadTs: z.string().optional().describe('Thread timestamp for replies'),
 });
 
+export const GenerateProjectUpdateInputSchema = z.object({
+  projectId: z.string().optional().describe('Optional project identifier'),
+  timeRange: z.string().optional().describe('Time range for the update'),
+  format: z.string().optional().describe('Output format'),
+  audience: z.string().optional().describe('Audience of the update'),
+});
+
 export const CreateGitHubIssueInputSchema = z.object({
   repo: z.string().min(1).describe('Repository name (owner/repo)'),
   title: z.string().min(1).describe('Issue title'),
@@ -575,22 +586,38 @@ export type UpdateLinearTicketInput = z.infer<
   typeof UpdateLinearTicketInputSchema
 >;
 export type SendSlackMessageInput = z.infer<typeof SendSlackMessageInputSchema>;
+export type GenerateProjectUpdateInput = z.infer<
+  typeof GenerateProjectUpdateInputSchema
+>;
 export type CreateGitHubIssueInput = z.infer<
   typeof CreateGitHubIssueInputSchema
 >;
 export type InternetSearchInput = z.infer<typeof InternetSearchInputSchema>;
 export type ThinkInput = z.infer<typeof ThinkInputSchema>;
 
+const LLMObservationTypeValues = [
+  'team_dynamic',
+  'workflow_insight',
+  'risk',
+  'recommendation',
+  'pattern',
+] as const;
+
+export type LLMObservationType = (typeof LLMObservationTypeValues)[number];
+
+const LLMObservationTypeSchema = z.enum(LLMObservationTypeValues);
+const LLMObservationTypeFieldSchema = z
+  .string()
+  .refine(
+    (value): value is LLMObservationType =>
+      LLMObservationTypeValues.includes(value as LLMObservationType),
+    {
+      message: `Must be one of: ${LLMObservationTypeValues.join(', ')}`,
+    },
+  );
+
 export const LLMObservationSchema = z.object({
-  type: z
-    .enum([
-      'team_dynamic',
-      'workflow_insight',
-      'risk',
-      'recommendation',
-      'pattern',
-    ])
-    .describe('Type of observation'),
+  type: LLMObservationTypeFieldSchema.describe('Type of observation'),
   title: z.string().describe('Short title for the observation'),
   observation: z.string().describe('Detailed observation content'),
   importance: z.number().min(0).max(1).describe('Importance score 0-1'),
@@ -686,6 +713,7 @@ export const MemoryCategorySchema = z.enum([
   'insight',
   'risk',
   'achievement',
+  'instruction',
 ]);
 
 export const SuggestedActionSchema = z.object({

@@ -8,11 +8,18 @@ import { AssistantController } from './assistant.controller';
 import { ThreadResolver } from './thread.resolver';
 import {
   MemoryService,
+  AgentPromptService,
   ToolsFactory,
+  LinearSkillsFactory,
   SubagentsFactory,
   GraphsFactory,
   OnboardingGraphsFactory,
+  LinearOnboardingGraphsService,
+  GitHubOnboardingGraphsService,
+  SlackOnboardingGraphsService,
+  IdentityLinkingGraphsService,
   AgentFactory,
+  SkillsFactory,
 } from './services';
 import {
   LINEA_AGENT,
@@ -35,11 +42,18 @@ import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
     ...persistenceProviders,
     // Memory service (needed by ToolsFactory)
     MemoryService,
+    AgentPromptService,
     // Factories
+    LinearSkillsFactory,
+    SkillsFactory,
     ToolsFactory,
     SubagentsFactory,
     AgentFactory,
     GraphsFactory,
+    LinearOnboardingGraphsService,
+    GitHubOnboardingGraphsService,
+    SlackOnboardingGraphsService,
+    IdentityLinkingGraphsService,
     OnboardingGraphsFactory,
     // Tools token (from ToolsFactory)
     {

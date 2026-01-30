@@ -4,22 +4,22 @@ const problems = [
   {
     icon: BarChart3,
     title: 'Micromanagement metrics',
-    text: 'Hours, commits, messages tracked - fake productivity rewarded.',
+    text: 'Hours, commits, messages tracked. Busywork gets rewarded.',
   },
   {
     icon: TrendingDown,
     title: 'Surface-level dashboards',
-    text: 'Tickets closed shown, but the real story is missed.',
+    text: 'Tickets closed are tracked, but blockers and tradeoffs are invisible.',
   },
   {
     icon: Layers,
     title: 'Context is invisible',
-    text: 'Who prevents fires? Who unlocks others? Nobody knows.',
+    text: 'Who prevents fires? Who unblocks others? Nobody knows.',
   },
   {
     icon: UserX,
     title: 'One-size-fits-all KPIs',
-    text: 'Different working styles get punished, not embraced.',
+    text: 'Deep work and collaboration get punished, not embraced.',
   },
 ];
 
@@ -33,10 +33,10 @@ export function ProblemSection() {
               The problem
             </p>
             <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground">
-              Teams waste resources not because people aren't working
+              Teams lose time not because people aren't working
               <br />
               <span className="text-muted-foreground">
-                - but because context is invisible
+                - but because context disappears across tools
               </span>
             </h2>
           </div>

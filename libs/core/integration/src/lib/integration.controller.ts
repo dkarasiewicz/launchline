@@ -2,9 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Query,
-  Param,
   Req,
   Res,
   Headers,
@@ -14,24 +12,24 @@ import {
   Logger,
   VERSION_NEUTRAL,
   RawBodyRequest,
-  BadRequestException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import {
   AuthenticatedUser,
+  AuthenticatedWorkspace,
   CurrentUser,
+  CurrentWorkspace,
   Public,
 } from '@launchline/core-common';
-import { IntegrationService } from './integration.service';
-import { IntegrationType } from './integration.models';
+import { IntegrationOAuthService } from './integration.oauth.service';
+import { IntegrationWebhookService } from './integration.webhook.service';
+import { IntegrationType, OAuthState } from './integration.models';
+import { randomBytes } from 'crypto';
 
 interface OAuthSessionData {
   oauthState?: string;
-  oauthType?: IntegrationType;
   oauthRedirectUrl?: string;
-  oauthWorkspaceId?: string;
-  oauthUserId?: string;
 }
 
 @Controller({ version: VERSION_NEUTRAL, path: 'integrations' })
@@ -39,73 +37,111 @@ export class IntegrationController {
   private readonly logger = new Logger(IntegrationController.name);
 
   constructor(
-    private readonly integrationService: IntegrationService,
+    private readonly oauthService: IntegrationOAuthService,
+    private readonly webhookService: IntegrationWebhookService,
     private readonly configService: ConfigService,
   ) {}
 
-  // ============================================================================
-  // OAuth Endpoints
-  // ============================================================================
-
-  /**
-   * Start OAuth flow for a specific integration type
-   * Stores OAuth state in session for security
-   */
-  @Get('oauth/:type/init')
-  async oauthInit(
-    @Param('type') type: string,
+  @Get('oauth/linear/init')
+  async linearOAuthInit(
     @Query('redirect_url') redirectUrl: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @CurrentWorkspace() workspace: AuthenticatedWorkspace,
     @Session() session: OAuthSessionData,
     @Res() res: Response,
   ) {
-    // Validate integration type
-    const integrationType = this.validateIntegrationType(type);
-    if (!integrationType) {
-      throw new BadRequestException(`Invalid integration type: ${type}`);
-    }
+    this.logger.debug(
+      { userId: user.userId, workspaceId: workspace.id },
+      'Starting Linear OAuth flow',
+    );
 
-    this.logger.debug(`Starting OAuth flow for ${integrationType}`);
+    const frontendUrl = this.configService.get<string>('frontendUrl');
 
     try {
-      // Start OAuth and get authorization URL
-      const { authorizationUrl, state, workspaceId } =
-        await this.integrationService.startOAuth(
-          user.userId,
-          integrationType,
-          redirectUrl,
-        );
+      const state = randomBytes(32).toString('hex');
+      const nonce = randomBytes(16).toString('hex');
 
-      // Store OAuth state in session for verification during callback
-      session.oauthState = state;
-      session.oauthType = integrationType;
+      const { authorizationUrl } = await this.oauthService.startLinearOAuth(
+        user.userId,
+        state,
+      );
+
+      const oauthState: OAuthState = {
+        workspaceId: workspace.id,
+        userId: user.userId,
+        type: IntegrationType.LINEAR,
+        redirectUrl,
+        nonce,
+        state,
+        createdAt: new Date().toISOString(),
+      };
+
+      session.oauthState = JSON.stringify(oauthState);
       session.oauthRedirectUrl = redirectUrl;
-      session.oauthWorkspaceId = workspaceId;
-      session.oauthUserId = user.userId;
+      this.logger.debug(
+        { userId: user.userId, workspaceId: workspace.id },
+        'Redirecting to Linear OAuth',
+      );
 
-      this.logger.debug(`Redirecting to OAuth provider for ${integrationType}`);
-
-      // Redirect to OAuth provider
       return res.redirect(authorizationUrl);
     } catch (err) {
-      this.logger.error(`OAuth init error: ${err}`);
-      const frontendUrl =
-        this.configService.get<string>('FRONTEND_URL') ||
-        'http://localhost:4200';
+      this.logger.error({ err }, 'Linear OAuth init error');
+
       return res.redirect(
         `${frontendUrl}/settings/integrations?error=oauth_init_failed&error_description=${encodeURIComponent(err instanceof Error ? err.message : 'Unknown error')}`,
       );
     }
   }
 
-  /**
-   * OAuth callback endpoint - handles the redirect from OAuth providers
-   * Validates state from session for CSRF protection
-   */
-  @Public()
-  @Get('oauth/:type/callback')
-  async oauthCallback(
-    @Param('type') type: string,
+  @Get('oauth/slack/init')
+  async slackOAuthInit(
+    @Query('redirect_url') redirectUrl: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+    @CurrentWorkspace() workspace: AuthenticatedWorkspace,
+    @Session() session: OAuthSessionData,
+    @Res() res: Response,
+  ) {
+    this.logger.debug(
+      { userId: user.userId, workspaceId: workspace.id },
+      'Starting Slack OAuth flow',
+    );
+
+    const frontendUrl = this.configService.get<string>('frontendUrl');
+
+    try {
+      const state = randomBytes(32).toString('hex');
+      const nonce = randomBytes(16).toString('hex');
+
+      const { authorizationUrl } = await this.oauthService.startSlackOAuth(
+        user.userId,
+        state,
+      );
+
+      const oauthState: OAuthState = {
+        workspaceId: workspace.id,
+        userId: user.userId,
+        type: IntegrationType.SLACK,
+        redirectUrl,
+        nonce,
+        state,
+        createdAt: new Date().toISOString(),
+      };
+
+      session.oauthState = JSON.stringify(oauthState);
+      session.oauthRedirectUrl = redirectUrl;
+
+      return res.redirect(authorizationUrl);
+    } catch (err) {
+      this.logger.error({ err }, 'Slack OAuth init error');
+
+      return res.redirect(
+        `${frontendUrl}/settings/integrations?error=oauth_init_failed&error_description=${encodeURIComponent(err instanceof Error ? err.message : 'Unknown error')}`,
+      );
+    }
+  }
+
+  @Get('oauth/linear/callback')
+  async linearOAuthCallback(
     @Query('code') code: string,
     @Query('state') state: string,
     @Query('error') error: string,
@@ -113,22 +149,102 @@ export class IntegrationController {
     @Session() session: OAuthSessionData,
     @Res() res: Response,
   ) {
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+    const frontendUrl = this.configService.get<string>('frontendUrl');
     const redirectUrl =
       session.oauthRedirectUrl || `${frontendUrl}/settings/integrations`;
 
-    // Clear OAuth session data after use
     const clearSession = () => {
       delete session.oauthState;
-      delete session.oauthType;
       delete session.oauthRedirectUrl;
-      delete session.oauthWorkspaceId;
-      delete session.oauthUserId;
     };
 
     if (error) {
-      this.logger.error(`OAuth error: ${error} - ${errorDescription}`);
+      this.logger.error(
+        {
+          error,
+          errorDescription,
+        },
+        'Linear OAuth error',
+      );
+
+      clearSession();
+
+      return res.redirect(
+        `${redirectUrl}?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`,
+      );
+    }
+
+    if (!code || !state) {
+      this.logger.error(
+        { hasCode: Boolean(code), hasState: Boolean(state) },
+        'Linear OAuth callback missing code or state',
+      );
+
+      clearSession();
+
+      return res.redirect(`${redirectUrl}?error=missing_params`);
+    }
+
+    const oauthState = JSON.parse(session.oauthState || '{}') as OAuthState;
+
+    if (oauthState.state !== state) {
+      this.logger.error(
+        { stateFromQuery: state, stateFromSession: oauthState.state },
+        'Linear OAuth state mismatch',
+      );
+
+      clearSession();
+
+      return res.redirect(`${redirectUrl}?error=invalid_state`);
+    }
+
+    try {
+      const { integrationId } = await this.oauthService.completeLinearOAuth(
+        code,
+        oauthState,
+      );
+
+      clearSession();
+
+      this.logger.log(
+        { integrationId, workspaceId: oauthState.workspaceId },
+        'Linear OAuth completed',
+      );
+
+      return res.redirect(
+        `${redirectUrl}?integration_id=${integrationId}&success=true`,
+      );
+    } catch (err) {
+      this.logger.error({ err }, 'Linear OAuth callback error');
+
+      clearSession();
+
+      return res.redirect(
+        `${redirectUrl}?error=oauth_failed&error_description=could_not_complete_oauth`,
+      );
+    }
+  }
+
+  @Get('oauth/slack/callback')
+  async slackOAuthCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+    @Query('error_description') errorDescription: string,
+    @Session() session: OAuthSessionData,
+    @Res() res: Response,
+  ) {
+    const frontendUrl = this.configService.get<string>('frontendUrl');
+    const redirectUrl =
+      session.oauthRedirectUrl || `${frontendUrl}/settings/integrations`;
+
+    const clearSession = () => {
+      delete session.oauthState;
+      delete session.oauthRedirectUrl;
+    };
+
+    if (error) {
+      this.logger.error({ error, errorDescription }, 'Slack OAuth error');
       clearSession();
       return res.redirect(
         `${redirectUrl}?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`,
@@ -136,158 +252,108 @@ export class IntegrationController {
     }
 
     if (!code || !state) {
+      this.logger.error(
+        { hasCode: Boolean(code), hasState: Boolean(state) },
+        'Slack OAuth callback missing code or state',
+      );
       clearSession();
       return res.redirect(`${redirectUrl}?error=missing_params`);
     }
 
-    // Validate state from session (CSRF protection)
-    if (!session.oauthState || session.oauthState !== state) {
-      this.logger.error('OAuth state mismatch - possible CSRF attack');
+    const oauthState = JSON.parse(session.oauthState || '{}') as OAuthState;
+
+    if (oauthState.state !== state) {
+      this.logger.error(
+        { stateFromQuery: state, stateFromSession: oauthState.state },
+        'Slack OAuth state mismatch',
+      );
       clearSession();
       return res.redirect(`${redirectUrl}?error=invalid_state`);
     }
 
-    // Validate integration type matches
-    const integrationType = this.validateIntegrationType(type);
-    if (!integrationType || session.oauthType !== integrationType) {
-      this.logger.error('OAuth type mismatch');
-      clearSession();
-      return res.redirect(`${redirectUrl}?error=type_mismatch`);
-    }
-
     try {
-      const { integrationId } = await this.integrationService.completeOAuth(
+      const { integrationId } = await this.oauthService.completeSlackOAuth(
         code,
-        state,
+        oauthState,
       );
 
       clearSession();
+
+      this.logger.log(
+        { integrationId, workspaceId: oauthState.workspaceId },
+        'Slack OAuth completed',
+      );
+
       return res.redirect(
         `${redirectUrl}?integration_id=${integrationId}&success=true`,
       );
     } catch (err) {
-      this.logger.error(`OAuth callback error: ${err}`);
+      this.logger.error({ err }, 'Slack OAuth callback error');
       clearSession();
       return res.redirect(
-        `${redirectUrl}?error=oauth_failed&error_description=${encodeURIComponent(err instanceof Error ? err.message : 'Unknown error')}`,
+        `${redirectUrl}?error=oauth_failed&error_description=could_not_complete_oauth`,
       );
     }
   }
 
-  // ============================================================================
-  // Webhook Endpoints
-  // ============================================================================
-
-  /**
-   * Linear webhook endpoint
-   */
   @Public()
   @Post('webhooks/linear')
   @HttpCode(HttpStatus.OK)
   async linearWebhook(
     @Headers('linear-signature') signature: string,
     @Headers('linear-delivery') deliveryId: string,
-    @Body() payload: Record<string, unknown>,
     @Req() req: RawBodyRequest<Request>,
   ) {
-    this.logger.debug(`Received Linear webhook: ${deliveryId}`);
-
-    const rawBody = req.rawBody?.toString() || JSON.stringify(payload);
-
-    return this.processWebhook(
-      IntegrationType.LINEAR,
-      payload,
-      rawBody,
-      signature,
+    this.logger.debug(
+      { deliveryId, signaturePresent: Boolean(signature) },
+      'Received Linear webhook',
     );
-  }
 
-  /**
-   * Slack webhook endpoint
-   */
-  @Public()
-  @Post('webhooks/slack')
-  @HttpCode(HttpStatus.OK)
-  async slackWebhook(
-    @Headers('x-slack-signature') signature: string,
-    @Headers('x-slack-request-timestamp') timestamp: string,
-    @Body() payload: Record<string, unknown>,
-    @Req() req: RawBodyRequest<Request>,
-  ) {
-    this.logger.debug('Received Slack webhook');
+    const rawBody = req.rawBody?.toString();
 
-    // Handle Slack URL verification challenge
-    if (payload['type'] === 'url_verification') {
-      return { challenge: payload['challenge'] };
+    if (!rawBody) {
+      this.logger.warn(
+        { deliveryId },
+        'Linear webhook received without raw body',
+      );
+
+      return { received: false, error: 'missing_body' };
     }
 
-    const rawBody = req.rawBody?.toString() || JSON.stringify(payload);
+    let payload: Record<string, unknown>;
 
-    return this.processWebhook(
-      IntegrationType.SLACK,
-      payload,
-      rawBody,
-      signature,
-    );
-  }
+    try {
+      payload = JSON.parse(rawBody);
+    } catch (e) {
+      this.logger.error({ deliveryId }, 'Failed to parse Linear webhook payload');
 
-  /**
-   * GitHub webhook endpoint
-   */
-  @Public()
-  @Post('webhooks/github')
-  @HttpCode(HttpStatus.OK)
-  async githubWebhook(
-    @Headers('x-hub-signature-256') signature: string,
-    @Headers('x-github-delivery') deliveryId: string,
-    @Headers('x-github-event') eventType: string,
-    @Body() payload: Record<string, unknown>,
-    @Req() req: RawBodyRequest<Request>,
-  ) {
-    this.logger.debug(`Received GitHub webhook: ${eventType} - ${deliveryId}`);
-
-    const rawBody = req.rawBody?.toString() || JSON.stringify(payload);
-
-    return this.processWebhook(
-      IntegrationType.GITHUB,
-      { ...payload, __eventType: eventType },
-      rawBody,
-      signature,
-    );
-  }
-
-  // ============================================================================
-  // Private Helpers
-  // ============================================================================
-
-  private validateIntegrationType(type: string): IntegrationType | null {
-    const validTypes = Object.values(IntegrationType);
-    const normalizedType = type.toLowerCase();
-
-    if (validTypes.includes(normalizedType as IntegrationType)) {
-      return normalizedType as IntegrationType;
+      return { received: false, error: 'invalid_json' };
     }
-    return null;
-  }
 
-  private async processWebhook(
-    type: IntegrationType,
-    payload: Record<string, unknown>,
-    rawBody: string,
-    signature?: string,
-  ): Promise<{ received: boolean }> {
-    // In a real implementation, you would:
-    // 1. Find the integration by type/workspace
-    // 2. Verify the webhook signature
-    // 3. Store the webhook delivery for processing
-    // 4. Publish an event to RabbitMQ for async processing
+    const eventType = payload['type'] as string;
+    const action = payload['action'] as string;
 
-    this.logger.log(`Processing ${type} webhook`, {
-      payloadKeys: Object.keys(payload),
-      hasSignature: !!signature,
-    });
+    this.logger.debug(
+      { eventType, action },
+      'Linear webhook event received',
+    );
 
-    // For now, just acknowledge receipt
-    return { received: true };
+    try {
+      const result = await this.webhookService.processLinearWebhook(
+        payload,
+        rawBody,
+        signature,
+      );
+
+      return {
+        received: true,
+        processed: result.processed,
+        integrationId: result.integrationId,
+      };
+    } catch (err) {
+      this.logger.error({ err }, 'Failed to process Linear webhook');
+
+      return { received: true, processed: false, error: 'processing_failed' };
+    }
   }
 }

@@ -6,4 +6,6 @@ export {
   UpdateLinearTicketToolUI,
   SendSlackMessageToolUI,
   InternetSearchToolUI,
+  CreateGitHubIssueToolUI,
+  ThinkToolUI,
 } from './approval';

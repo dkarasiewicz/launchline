@@ -6,15 +6,10 @@ import {
 } from '@nestjs/graphql';
 import { IsEnum, IsOptional, IsString, IsUrl } from 'class-validator';
 
-// ============================================================================
-// Enums
-// ============================================================================
-
 export enum IntegrationType {
   LINEAR = 'linear',
   SLACK = 'slack',
   GITHUB = 'github',
-  JIRA = 'jira',
   NOTION = 'notion',
 }
 
@@ -37,34 +32,23 @@ registerEnumType(IntegrationStatus, {
 });
 
 export enum WebhookEventType {
-  // Linear events
   LINEAR_ISSUE_CREATED = 'linear.issue.created',
   LINEAR_ISSUE_UPDATED = 'linear.issue.updated',
   LINEAR_COMMENT_CREATED = 'linear.comment.created',
 
-  // Slack events
   SLACK_MESSAGE_POSTED = 'slack.message.posted',
   SLACK_REACTION_ADDED = 'slack.reaction.added',
 
-  // GitHub events
   GITHUB_PR_OPENED = 'github.pr.opened',
   GITHUB_PR_MERGED = 'github.pr.merged',
   GITHUB_ISSUE_OPENED = 'github.issue.opened',
   GITHUB_PUSH = 'github.push',
-
-  // Jira events
-  JIRA_ISSUE_CREATED = 'jira.issue.created',
-  JIRA_ISSUE_UPDATED = 'jira.issue.updated',
 }
 
 registerEnumType(WebhookEventType, {
   name: 'WebhookEventType',
   description: 'The type of webhook event',
 });
-
-// ============================================================================
-// GraphQL Object Types
-// ============================================================================
 
 @ObjectType()
 export class Integration {
@@ -91,6 +75,12 @@ export class Integration {
 
   @Field({ nullable: true })
   externalAccountName?: string;
+
+  @Field({ nullable: true })
+  externalOrganizationId?: string;
+
+  @Field({ nullable: true })
+  externalOrganizationName?: string;
 
   @Field(() => [String], { nullable: true })
   scopes?: string[];
@@ -168,10 +158,6 @@ export class WebhookDelivery {
   processedAt?: Date;
 }
 
-// ============================================================================
-// GraphQL Input Types
-// ============================================================================
-
 @InputType()
 export class StartOAuthInput {
   @Field(() => IntegrationType)
@@ -226,9 +212,15 @@ export class RefreshIntegrationTokenInput {
   integrationId!: string;
 }
 
-// ============================================================================
-// Internal Types (non-GraphQL)
-// ============================================================================
+export interface OAuthState {
+  workspaceId: string;
+  userId: string;
+  type: IntegrationType;
+  redirectUrl?: string;
+  nonce: string;
+  state: string;
+  createdAt: string;
+}
 
 export interface OAuthTokens {
   accessToken: string;
@@ -237,54 +229,4 @@ export interface OAuthTokens {
   expiresAt?: Date;
   scope?: string;
   idToken?: string;
-}
-
-export interface IntegrationConfig {
-  type: IntegrationType;
-  clientId: string;
-  clientSecret: string;
-  authorizationUrl: string;
-  tokenUrl: string;
-  scopes: string[];
-  webhookPath: string;
-}
-
-export interface WebhookPayload {
-  type: string;
-  action?: string;
-  data: Record<string, unknown>;
-  timestamp: string;
-  signature?: string;
-}
-
-export interface StoredIntegration {
-  id: string;
-  workspaceId: string;
-  type: IntegrationType;
-  status: IntegrationStatus;
-  name?: string;
-  description?: string;
-  externalAccountId?: string;
-  externalAccountName?: string;
-  scopes?: string[];
-  webhookUrl?: string;
-  webhookSecret?: string;
-  // OAuth tokens (encrypted in storage)
-  accessToken?: string;
-  refreshToken?: string;
-  tokenType?: string;
-  tokenExpiresAt?: string;
-  // Timestamps
-  createdAt: string;
-  updatedAt: string;
-  lastSyncAt?: string;
-}
-
-export interface OAuthState {
-  workspaceId: string;
-  userId: string;
-  type: IntegrationType;
-  redirectUrl?: string;
-  nonce: string;
-  createdAt: string;
 }

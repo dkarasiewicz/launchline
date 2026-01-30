@@ -14,6 +14,8 @@ const configSchema = z.object({
   enableApolloLandingPage: z.boolean(),
   gracefulShutdownTimeoutMs: z.number(),
   trustProxy: z.boolean(),
+  appUrl: z.string(),
+  frontendUrl: z.string(),
   cors: z.object({
     enabled: z.boolean(),
     origin: z.array(z.string()),
@@ -28,6 +30,23 @@ const configSchema = z.object({
   }),
   marketing: z.object({
     cookieName: z.string(),
+  }),
+  integrations: z.object({
+    encryptionKey: z.string().length(64), // 32 bytes hex-encoded
+    linear: z
+      .object({
+        clientId: z.string(),
+        clientSecret: z.string(),
+        webhookSecret: z.optional(z.string()),
+      })
+      .optional(),
+    slack: z
+      .object({
+        clientId: z.string(),
+        clientSecret: z.string(),
+        signingSecret: z.string(),
+      })
+      .optional(),
   }),
   database: z.object({
     user: z.string(),
@@ -88,6 +107,8 @@ export const config = () => ({
     10,
   ),
   trustProxy: process.env.TRUST_PROXY === 'true',
+  appUrl: process.env.APP_URL || 'http://localhost:3000',
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
   cors: {
     enabled: process.env.CORS_ENABLED === 'true',
     origin: process.env.CORS_ORIGIN?.split(','),
@@ -104,6 +125,23 @@ export const config = () => ({
   },
   marketing: {
     cookieName: process.env.MARKETING_COOKIE_NAME || 'core.marketingsid',
+  },
+  integrations: {
+    encryptionKey: process.env.INTEGRATION_ENCRYPTION_KEY,
+    linear: process.env.LINEAR_CLIENT_ID
+      ? {
+          clientId: process.env.LINEAR_CLIENT_ID,
+          clientSecret: process.env.LINEAR_CLIENT_SECRET,
+          webhookSecret: process.env.LINEAR_WEBHOOK_SECRET,
+        }
+      : undefined,
+    slack: process.env.SLACK_CLIENT_ID
+      ? {
+          clientId: process.env.SLACK_CLIENT_ID,
+          clientSecret: process.env.SLACK_CLIENT_SECRET,
+          signingSecret: process.env.SLACK_SIGNING_SECRET || '',
+        }
+      : undefined,
   },
   database: {
     user: process.env.DB_USERNAME,

@@ -1,23 +1,20 @@
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Logger } from '@nestjs/common';
 import {
-  AuthenticatedUser,
   AuthenticatedWorkspace,
-  CurrentUser,
   CurrentWorkspace,
+  Roles,
 } from '@launchline/core-common';
 import { IntegrationService } from './integration.service';
 import {
+  DeleteIntegrationInput,
   Integration,
   IntegrationListResponse,
   IntegrationStatus,
   IntegrationType,
-  OAuthStartResponse,
-  StartOAuthInput,
   UpdateIntegrationInput,
-  DeleteIntegrationInput,
-  RefreshIntegrationTokenInput,
 } from './integration.models';
+import { UserRole } from '@launchline/models';
 
 @Resolver(() => Integration)
 export class IntegrationResolver {
@@ -25,11 +22,15 @@ export class IntegrationResolver {
 
   constructor(private readonly integrationService: IntegrationService) {}
 
+  @Roles(UserRole.WORKSPACE_ADMIN, UserRole.WORKSPACE_MEMBER)
   @Query(() => IntegrationListResponse)
   async integrations(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
   ): Promise<IntegrationListResponse> {
-    this.logger.debug(`Listing integrations for workspace: ${workspace.id}`);
+    this.logger.debug(
+      { workspaceId: workspace.id },
+      'Listing integrations for workspace',
+    );
 
     const results = await this.integrationService.listIntegrations(
       workspace.id,
@@ -45,6 +46,8 @@ export class IntegrationResolver {
         description: i.description,
         externalAccountId: i.externalAccountId,
         externalAccountName: i.externalAccountName,
+        externalOrganizationId: i.externalOrganizationId,
+        externalOrganizationName: i.externalOrganizationName,
         scopes: i.scopes,
         webhookUrl: i.webhookUrl,
         // Don't expose webhook secret in GraphQL
@@ -58,13 +61,16 @@ export class IntegrationResolver {
     };
   }
 
+  @Roles(UserRole.WORKSPACE_ADMIN, UserRole.WORKSPACE_MEMBER)
   @Query(() => Integration, { nullable: true })
   async integration(
-    @CurrentUser() user: AuthenticatedUser,
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
     @Args('integrationId') integrationId: string,
   ): Promise<Integration | null> {
-    this.logger.debug(`Fetching integration: ${integrationId}`);
+    this.logger.debug(
+      { integrationId, workspaceId: workspace.id },
+      'Fetching integration',
+    );
 
     const result = await this.integrationService.getIntegration(integrationId);
 
@@ -81,6 +87,8 @@ export class IntegrationResolver {
       description: result.description,
       externalAccountId: result.externalAccountId,
       externalAccountName: result.externalAccountName,
+      externalOrganizationId: result.externalOrganizationId,
+      externalOrganizationName: result.externalOrganizationName,
       scopes: result.scopes,
       webhookUrl: result.webhookUrl,
       createdAt: new Date(result.createdAt),
@@ -92,35 +100,16 @@ export class IntegrationResolver {
     };
   }
 
-  // ============================================================================
-  // Mutations
-  // ============================================================================
-
-  @Mutation(() => OAuthStartResponse)
-  async startIntegrationOAuth(
-    @CurrentUser() user: AuthenticatedUser,
-    @Args('input') input: StartOAuthInput,
-  ): Promise<OAuthStartResponse> {
-    this.logger.debug(`Starting OAuth for ${input.type}`);
-
-    const result = await this.integrationService.startOAuth(
-      user.userId,
-      input.type,
-      input.redirectUrl,
-    );
-
-    return {
-      authorizationUrl: result.authorizationUrl,
-      state: result.state,
-    };
-  }
-
+  @Roles(UserRole.WORKSPACE_ADMIN, UserRole.WORKSPACE_MEMBER)
   @Mutation(() => Boolean)
   async updateIntegration(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
     @Args('input') input: UpdateIntegrationInput,
   ): Promise<boolean> {
-    this.logger.debug(`Updating integration: ${input.integrationId}`);
+    this.logger.debug(
+      { integrationId: input.integrationId, workspaceId: workspace.id },
+      'Updating integration',
+    );
 
     // Verify ownership
     const existing = await this.integrationService.getIntegration(
@@ -130,20 +119,21 @@ export class IntegrationResolver {
       throw new Error('Integration not found');
     }
 
-    await this.integrationService.updateIntegration(input.integrationId, {
-      name: input.name,
-      description: input.description,
-    });
+    // TODO: update integration fields as needed
 
     return true;
   }
 
+  @Roles(UserRole.WORKSPACE_ADMIN, UserRole.WORKSPACE_MEMBER)
   @Mutation(() => Boolean)
   async deleteIntegration(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
     @Args('input') input: DeleteIntegrationInput,
   ): Promise<boolean> {
-    this.logger.debug(`Deleting integration: ${input.integrationId}`);
+    this.logger.debug(
+      { integrationId: input.integrationId, workspaceId: workspace.id },
+      'Deleting integration',
+    );
 
     // Verify ownership
     const existing = await this.integrationService.getIntegration(
@@ -154,28 +144,6 @@ export class IntegrationResolver {
     }
 
     await this.integrationService.deleteIntegration(input.integrationId);
-
-    return true;
-  }
-
-  @Mutation(() => Boolean)
-  async refreshIntegrationToken(
-    @CurrentWorkspace() workspace: AuthenticatedWorkspace,
-    @Args('input') input: RefreshIntegrationTokenInput,
-  ): Promise<boolean> {
-    this.logger.debug(
-      `Refreshing token for integration: ${input.integrationId}`,
-    );
-
-    // Verify ownership
-    const existing = await this.integrationService.getIntegration(
-      input.integrationId,
-    );
-    if (!existing || existing.workspaceId !== workspace.id) {
-      throw new Error('Integration not found');
-    }
-
-    await this.integrationService.refreshToken(input.integrationId);
 
     return true;
   }

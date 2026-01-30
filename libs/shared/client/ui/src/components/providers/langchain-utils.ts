@@ -144,14 +144,28 @@ function createHumanMessage(rest: Record<string, unknown>): HumanMessage {
 }
 
 function createAIMessage(rest: Record<string, unknown>): AIMessage {
-  const { tool_calls: rawToolCalls, ...other } = rest;
+  const { tool_calls: rawToolCalls, additional_kwargs, ...other } = rest;
+  const nestedToolCalls = (
+    additional_kwargs as Record<string, unknown> | undefined
+  )?.['tool_calls'];
 
-  if (!Array.isArray(rawToolCalls)) {
+  const toolCallList = Array.isArray(rawToolCalls)
+    ? rawToolCalls
+    : Array.isArray(nestedToolCalls)
+      ? nestedToolCalls
+      : null;
+
+  if (!toolCallList) {
     return { ...rest, type: 'ai' } as AIMessage;
   }
 
-  const tool_calls = rawToolCalls.map(coerceToolCall) as ToolCall[];
-  return { ...other, type: 'ai', tool_calls } as AIMessage;
+  const tool_calls = toolCallList.map(coerceToolCall) as ToolCall[];
+  return {
+    ...other,
+    type: 'ai',
+    tool_calls,
+    additional_kwargs,
+  } as AIMessage;
 }
 
 function createSystemMessage(rest: Record<string, unknown>): SystemMessage {

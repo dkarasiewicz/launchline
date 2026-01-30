@@ -14,4 +14,4 @@ export {
   SendSlackMessageToolUI,
   GenerateProjectUpdateTool,
   WriteTodosToolUI,
-} from '../tools/linea/LineaTools';
+} from '../tool-ui';

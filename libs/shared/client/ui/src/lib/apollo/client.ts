@@ -11,9 +11,9 @@ import { headers } from 'next/headers';
 // Configuration
 // ============================================================================
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
-const GRAPHQL_ENDPOINT =
-  process.env.CORE_API_HOST_GRAPHQL || `${API_BASE}/graphql`;
+const API_BASE =
+  process.env.NEXT_PUBLIC_CORE_API_URL || 'http://localhost:3000';
+const GRAPHQL_ENDPOINT = `${API_BASE}/graphql`;
 
 // ============================================================================
 // Server-side Apollo Client (SSR-safe with cookie forwarding)

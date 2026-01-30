@@ -1,17 +1,26 @@
 'use client';
 
 /**
- * Search Memories Tool UI
+ * Memory Tool UIs
  *
- * Displays memory search results in a DataTable with proper formatting.
+ * UI components for memory-related tools.
  */
 
 import { useState, useEffect } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Brain } from 'lucide-react';
+import {
+  Brain,
+  AlertTriangle,
+  Lightbulb,
+  User,
+  Save,
+  CheckCircle,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
 import { Column } from '../data-table/types';
+import { cn } from '../../../lib/utils';
 
 // ============================================================================
 // Types
@@ -193,6 +202,197 @@ export const SearchMemoriesToolUI = makeAssistantToolUI<
             <p className="text-sm text-muted-foreground py-4 text-center">
               No memories found matching your query.
             </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// SAVE MEMORY TOOL UI
+// ============================================================================
+
+type SaveMemoryArgs = {
+  content: string;
+  summary: string;
+  namespace: string;
+  category: string;
+  importance?: number;
+  entityId?: string;
+};
+
+export const SaveMemoryToolUI = makeAssistantToolUI<SaveMemoryArgs, string>({
+  toolName: 'save_memory',
+  render: function SaveMemoryUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const isSuccess = result?.includes('successfully');
+
+    return (
+      <Card className="w-full max-w-md overflow-hidden my-2">
+        <CardHeader className={cn('pb-3', isSuccess && 'bg-green-500/10')}>
+          <div className="flex items-center gap-2">
+            {isSuccess ? (
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            ) : (
+              <Save className="h-4 w-4 text-primary" />
+            )}
+            <CardTitle className="text-sm font-medium">
+              {isRunning
+                ? 'Saving memory...'
+                : isSuccess
+                  ? 'Memory Saved'
+                  : 'Save Memory'}
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-3">
+          <div className="flex gap-2">
+            <Badge variant="outline">{args.namespace}</Badge>
+            <Badge variant="secondary">{args.category}</Badge>
+            {args.importance && (
+              <Badge variant="secondary">Importance: {args.importance}</Badge>
+            )}
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground mb-1">Summary</p>
+            <p className="text-sm">{args.summary}</p>
+          </div>
+          {result && (
+            <p
+              className={cn(
+                'text-xs',
+                isSuccess ? 'text-green-600' : 'text-muted-foreground',
+              )}
+            >
+              {result}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// GET BLOCKERS TOOL UI
+// ============================================================================
+
+type GetBlockersArgs = {
+  limit?: number;
+};
+
+export const GetBlockersToolUI = makeAssistantToolUI<GetBlockersArgs, string>({
+  toolName: 'get_blockers',
+  render: function GetBlockersUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const isEmpty = result === 'No active blockers found.';
+
+    return (
+      <Card className="w-full max-w-lg overflow-hidden my-2">
+        <CardHeader className="pb-3 bg-rose-500/5">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-500" />
+            <CardTitle className="text-sm font-medium">
+              {isRunning ? 'Finding blockers...' : 'Active Blockers'}
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {isRunning ? (
+            <ThinkingLoader message="Searching for blockers..." />
+          ) : isEmpty ? (
+            <div className="flex items-center gap-2 text-green-600 py-2">
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-sm">No active blockers found!</span>
+            </div>
+          ) : (
+            <div className="text-sm whitespace-pre-wrap">{result}</div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// GET DECISIONS TOOL UI
+// ============================================================================
+
+type GetDecisionsArgs = {
+  limit?: number;
+};
+
+export const GetDecisionsToolUI = makeAssistantToolUI<GetDecisionsArgs, string>(
+  {
+    toolName: 'get_decisions',
+    render: function GetDecisionsUI({ args, result, status }) {
+      const isRunning = status.type === 'running';
+      const isEmpty = result === 'No recent decisions found.';
+
+      return (
+        <Card className="w-full max-w-lg overflow-hidden my-2">
+          <CardHeader className="pb-3 bg-emerald-500/5">
+            <div className="flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-emerald-500" />
+              <CardTitle className="text-sm font-medium">
+                {isRunning ? 'Finding decisions...' : 'Recent Decisions'}
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {isRunning ? (
+              <ThinkingLoader message="Searching for decisions..." />
+            ) : isEmpty ? (
+              <p className="text-sm text-muted-foreground py-2">
+                No recent decisions found.
+              </p>
+            ) : (
+              <div className="text-sm whitespace-pre-wrap">{result}</div>
+            )}
+          </CardContent>
+        </Card>
+      );
+    },
+  },
+);
+
+// ============================================================================
+// RESOLVE IDENTITY TOOL UI
+// ============================================================================
+
+type ResolveIdentityArgs = {
+  name: string;
+};
+
+export const ResolveIdentityToolUI = makeAssistantToolUI<
+  ResolveIdentityArgs,
+  string
+>({
+  toolName: 'resolve_identity',
+  render: function ResolveIdentityUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const notFound = result?.includes('No linked identity found');
+
+    return (
+      <Card className="w-full max-w-md overflow-hidden my-2">
+        <CardHeader className="pb-3 bg-blue-500/5">
+          <div className="flex items-center gap-2">
+            <User className="h-4 w-4 text-blue-500" />
+            <CardTitle className="text-sm font-medium">
+              {isRunning ? 'Resolving identity...' : `Identity: ${args.name}`}
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {isRunning ? (
+            <ThinkingLoader message={`Looking up ${args.name}...`} />
+          ) : notFound ? (
+            <p className="text-sm text-muted-foreground">{result}</p>
+          ) : (
+            <div className="text-sm whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none">
+              {result}
+            </div>
           )}
         </CardContent>
       </Card>

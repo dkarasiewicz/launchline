@@ -1,14 +1,14 @@
 'use client';
 
 /**
- * Get Inbox Items Tool UI
+ * Inbox Tool UIs
  *
- * Displays inbox items in a DataTable with proper formatting.
+ * Displays inbox items and workspace status.
  */
 
 import { useState, useEffect } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Inbox } from 'lucide-react';
+import { Inbox, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
@@ -188,6 +188,63 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
             <p className="text-sm text-muted-foreground py-4 text-center">
               No inbox items found.
             </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// GET WORKSPACE STATUS TOOL UI
+// ============================================================================
+
+type GetWorkspaceStatusArgs = {
+  includeMetrics?: boolean;
+};
+
+export const GetWorkspaceStatusToolUI = makeAssistantToolUI<
+  GetWorkspaceStatusArgs,
+  string
+>({
+  toolName: 'get_workspace_status',
+  render: function GetWorkspaceStatusUI({ args, result, status }) {
+    const [showContent, setShowContent] = useState(false);
+
+    useEffect(() => {
+      if (status.type === 'running') {
+        setShowContent(false);
+        const timer = setTimeout(() => setShowContent(true), 300);
+        return () => clearTimeout(timer);
+      } else {
+        setShowContent(true);
+      }
+    }, [status.type]);
+
+    const isRunning = status.type === 'running';
+
+    return (
+      <Card className="w-full max-w-lg overflow-hidden my-2">
+        <CardHeader className="pb-3 bg-indigo-500/5">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-indigo-500" />
+            <CardTitle className="text-sm font-medium">
+              {isRunning ? 'Loading status...' : 'Workspace Status'}
+            </CardTitle>
+            {args.includeMetrics && (
+              <Badge variant="secondary" className="text-xs ml-auto">
+                + Metrics
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {isRunning && !showContent ? (
+            <ThinkingLoader message="Gathering workspace status..." />
+          ) : (
+            <div className="text-sm whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none">
+              {result}
+            </div>
           )}
         </CardContent>
       </Card>

@@ -1,14 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DomainEventType,
   EVENT_BUS_EXCHANGE,
   EventType,
   IntegrationConnectedEvent,
+  IntegrationWebhookReceivedEvent,
   Public,
 } from '@launchline/core-common';
 import {
   IntegrationFacade,
   IntegrationType,
+  SlackService,
 } from '@launchline/core-integration';
 import {
   RabbitSubscribe,
@@ -17,6 +19,10 @@ import {
 import { OnboardingGraphsFactory } from './services';
 import { LineaFacade } from './linea.facade';
 import { randomUUID } from 'crypto';
+import { SourceType } from './types';
+import type { ReactAgent } from 'langchain';
+import { LINEA_AGENT } from './tokens';
+import { AssistantService } from './assistant.service';
 
 const LINEA_DOMAIN = 'LINEA';
 
@@ -28,6 +34,10 @@ export class LineaQueue {
     private readonly onboardingGraphsFactory: OnboardingGraphsFactory,
     private readonly integrationFacade: IntegrationFacade,
     private readonly lineaFacade: LineaFacade,
+    private readonly slackService: SlackService,
+    private readonly assistantService: AssistantService,
+    @Inject(LINEA_AGENT)
+    private readonly agent: ReactAgent,
   ) {}
 
   @Public()
@@ -47,6 +57,71 @@ export class LineaQueue {
         );
         break;
       }
+      case EventType.INTEGRATION_WEBHOOK_RECEIVED: {
+        await this.handleWebhookReceived(
+          domainEvent as IntegrationWebhookReceivedEvent,
+        );
+        break;
+      }
+    }
+  }
+
+  /**
+   * Handle incoming webhook events from integrations
+   * Routes to appropriate processing based on integration type
+   */
+  private async handleWebhookReceived(
+    event: IntegrationWebhookReceivedEvent,
+  ): Promise<void> {
+    const { payload } = event;
+
+    this.logger.debug(
+      `Processing webhook: ${payload.integrationType}/${payload.eventType}/${payload.action}`,
+    );
+
+    if (payload.integrationType === IntegrationType.LINEAR) {
+      await this.processLinearWebhook(payload);
+    }
+
+    if (payload.integrationType === IntegrationType.SLACK) {
+      await this.processSlackWebhook(payload);
+    }
+  }
+
+  /**
+   * Process Linear webhook events through Linea's ingestion pipeline
+   */
+  private async processLinearWebhook(payload: {
+    integrationId: string;
+    workspaceId: string;
+    eventType: string;
+    action?: string;
+    payload: string;
+  }): Promise<void> {
+    try {
+      const webhookPayload = JSON.parse(payload.payload);
+
+      // Map Linear event type to Linea event type
+      const eventType = `${payload.eventType.toLowerCase()}.${payload.action || 'update'}`;
+
+      // Process through LineaFacade
+      const result = await this.lineaFacade.processWebhook({
+        workspaceId: payload.workspaceId,
+        userId: 'system', // Webhooks are system-initiated
+        source: 'linear' as SourceType,
+        eventType,
+        payload: webhookPayload,
+      });
+
+      this.logger.debug(
+        `Processed Linear webhook: ${result.normalizedEvents.length} events normalized, ${result.inboxItems.length} inbox items`,
+      );
+    } catch (error) {
+      this.logger.error(
+        { err: error, workspaceId: payload.workspaceId },
+        'Failed to process Linear webhook',
+      );
+      // Don't rethrow - we don't want to requeue webhook processing failures
     }
   }
 
@@ -65,6 +140,15 @@ export class LineaQueue {
         payload.integrationId,
         payload.workspaceId,
         payload.userId,
+      );
+    }
+
+    if (payload.integrationType === IntegrationType.SLACK) {
+      await this.triggerSlackOnboarding(
+        payload.integrationId,
+        payload.workspaceId,
+        payload.userId,
+        payload.externalOrganizationId,
       );
     }
 
@@ -95,10 +179,12 @@ export class LineaQueue {
       }
 
       // Create graph context
+      const correlationId = randomUUID();
       const ctx = {
         workspaceId,
         userId,
-        correlationId: randomUUID(),
+        correlationId,
+        threadId: `linear-onboarding-${correlationId}`,
       };
 
       // Run Linear onboarding
@@ -109,12 +195,13 @@ export class LineaQueue {
       );
 
       this.logger.log(
-        `Linear onboarding completed for workspace ${workspaceId}`,
         {
+          workspaceId,
           memoriesCreated: result.memoriesCreated.length,
           inboxCandidates: result.inboxCandidates.length,
           errors: result.errors.length,
         },
+        'Linear onboarding completed',
       );
 
       // Create inbox threads for detected items
@@ -138,22 +225,250 @@ export class LineaQueue {
             });
           } catch (err) {
             this.logger.warn(
-              `Failed to create inbox thread for candidate ${candidate.id}:`,
-              err,
+              { err, candidateId: candidate.id },
+              'Failed to create inbox thread for candidate',
             );
           }
         }
       }
 
       if (result.errors.length > 0) {
-        this.logger.warn(`Linear onboarding had errors:`, result.errors);
+        this.logger.warn(
+          { errors: result.errors },
+          'Linear onboarding had errors',
+        );
       }
     } catch (error) {
       this.logger.error(
-        `Failed to trigger Linear onboarding for workspace ${workspaceId}`,
-        error,
+        { err: error, workspaceId },
+        'Failed to trigger Linear onboarding',
       );
       throw error; // Re-throw to trigger requeue
     }
+  }
+
+  private async triggerSlackOnboarding(
+    integrationId: string,
+    workspaceId: string,
+    userId: string,
+    slackWorkspaceId?: string,
+  ): Promise<void> {
+    this.logger.log(
+      { workspaceId, slackWorkspaceId },
+      'Triggering Slack onboarding',
+    );
+
+    try {
+      const accessToken =
+        await this.integrationFacade.getAccessToken(integrationId);
+
+      if (!accessToken) {
+        this.logger.error(
+          { integrationId, workspaceId },
+          'No Slack access token found for integration',
+        );
+        return;
+      }
+
+      if (!slackWorkspaceId) {
+        this.logger.warn(
+          { integrationId, workspaceId },
+          'Slack onboarding missing workspace id, skipping',
+        );
+        return;
+      }
+
+      const correlationId = randomUUID();
+      const ctx = {
+        workspaceId,
+        userId,
+        correlationId,
+        threadId: `slack-onboarding-${correlationId}`,
+      };
+
+      const result = await this.onboardingGraphsFactory.runSlackOnboarding(
+        ctx,
+        accessToken,
+        slackWorkspaceId,
+      );
+
+      this.logger.log(
+        {
+          workspaceId,
+          memoriesCreated: result.memoriesCreated.length,
+          errors: result.errors.length,
+        },
+        'Slack onboarding completed',
+      );
+
+      if (result.errors.length > 0) {
+        this.logger.warn(
+          { errors: result.errors },
+          'Slack onboarding had errors',
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        { err: error, workspaceId },
+        'Failed to trigger Slack onboarding',
+      );
+      throw error;
+    }
+  }
+
+  private async processSlackWebhook(payload: {
+    integrationId: string;
+    workspaceId: string;
+    eventType: string;
+    action?: string;
+    payload: string;
+  }): Promise<void> {
+    try {
+      const webhookPayload = JSON.parse(payload.payload);
+      const event = webhookPayload.event as
+        | {
+            type?: string;
+            subtype?: string;
+            user?: string;
+            text?: string;
+            channel?: string;
+            channel_type?: string;
+            ts?: string;
+            thread_ts?: string;
+            bot_id?: string;
+          }
+        | undefined;
+
+      if (event && (event.type === 'message' || event.type === 'app_mention')) {
+        await this.handleSlackConversation(payload, webhookPayload, event);
+      }
+
+      await this.lineaFacade.processWebhook({
+        workspaceId: payload.workspaceId,
+        userId: 'system',
+        source: 'slack' as SourceType,
+        eventType: payload.eventType,
+        payload: webhookPayload,
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, workspaceId: payload.workspaceId },
+        'Failed to process Slack webhook',
+      );
+    }
+  }
+
+  private async handleSlackConversation(
+    payload: { integrationId: string; workspaceId: string },
+    webhookPayload: Record<string, unknown>,
+    event: {
+      type?: string;
+      subtype?: string;
+      user?: string;
+      text?: string;
+      channel?: string;
+      channel_type?: string;
+      ts?: string;
+      thread_ts?: string;
+      bot_id?: string;
+    },
+  ): Promise<void> {
+    if (event.subtype || event.bot_id) {
+      return;
+    }
+
+    const channel = event.channel;
+    if (!channel || !event.text || !event.ts) {
+      return;
+    }
+
+    const isDirectMessage = event.channel_type === 'im';
+    const isMention = event.type === 'app_mention';
+
+    if (!isDirectMessage && !isMention) {
+      return;
+    }
+
+    const accessToken = await this.integrationFacade.getAccessToken(
+      payload.integrationId,
+    );
+    if (!accessToken) {
+      this.logger.error(
+        { integrationId: payload.integrationId },
+        'Slack access token missing for reply',
+      );
+      return;
+    }
+
+    const threadRoot = event.thread_ts || event.ts;
+    const threadId = `slack-${payload.workspaceId}-${channel}-${threadRoot}`;
+    const userId = event.user ? `slack:${event.user}` : 'slack:unknown';
+
+    const existingThread = await this.assistantService.getThread(threadId);
+    if (!existingThread) {
+      await this.assistantService.initializeThread(
+        payload.workspaceId,
+        userId,
+        threadId,
+      );
+    }
+
+    const cleanedText = isMention
+      ? event.text.replace(/<@[^>]+>/g, '').trim()
+      : event.text.trim();
+
+    if (!cleanedText) {
+      return;
+    }
+
+    const messages: Array<{ type: string; content: string }> = [
+      { type: 'human', content: cleanedText },
+    ];
+
+    const result = (await this.agent.invoke(
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
+      { messages },
+      {
+        configurable: {
+          thread_id: threadId,
+          workspaceId: payload.workspaceId,
+          userId,
+        },
+      },
+    )) as { messages?: Array<{ content?: unknown }> } | undefined;
+
+    const lastMessage = result?.messages?.at(-1);
+    const reply =
+      typeof lastMessage?.content === 'string'
+        ? lastMessage.content
+        : Array.isArray(lastMessage?.content)
+          ? lastMessage.content.map((part) => String(part)).join('\n')
+          : null;
+
+    if (!reply) {
+      this.logger.warn(
+        { eventType: event.type, workspaceId: payload.workspaceId },
+        'Slack reply missing from agent response',
+      );
+      return;
+    }
+
+    await this.slackService.postMessage(
+      accessToken,
+      channel,
+      reply,
+      event.thread_ts || event.ts,
+    );
+
+    this.logger.debug(
+      {
+        workspaceId: payload.workspaceId,
+        channel,
+        eventType: event.type,
+        eventId: webhookPayload['event_id'],
+      },
+      'Replied to Slack message',
+    );
   }
 }

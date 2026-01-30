@@ -85,36 +85,50 @@ async function* streamMessages({
           break;
         }
         case 'updates': {
-          if (value.data.__interrupt__) {
-            yield {
-              event: 'updates',
-              data: value.data,
-            };
-
-            break;
-          }
-
-          const rawUpdate = value.data[Object.keys(value.data)[0]] as {
+          const updatePayload = value.data as Record<string, unknown>;
+          const updates = Object.values(updatePayload) as Array<{
             messages?: SerializedConstructor[];
             __interrupt__?: unknown[];
-          };
+          }>;
           const parsedUpdate: {
             messages?: LangChainMessage[];
             __interrupt__?: unknown[];
           } = {};
+          const messagesBatch: LangChainMessage[] = [];
+          let interrupts: unknown[] | undefined;
 
-          parsedUpdate.__interrupt__ = rawUpdate.__interrupt__;
+          for (const update of updates) {
+            if (!update || typeof update !== 'object') {
+              continue;
+            }
+            if (Array.isArray(update.__interrupt__)) {
+              interrupts = update.__interrupt__;
+            }
 
-          if (rawUpdate.messages) {
-            parsedUpdate.messages = rawUpdate.messages.map(
-              constructMessageFromParams,
-            ) as LangChainMessage[];
+            if (Array.isArray(update.messages)) {
+              const parsedMessages = update.messages
+                .map(constructMessageFromParams)
+                .filter((message) =>
+                  ['ai', 'tool', 'human', 'system'].includes(message.type),
+                ) as LangChainMessage[];
+              messagesBatch.push(...parsedMessages);
+            }
           }
 
-          yield {
-            event: 'updates',
-            data: parsedUpdate,
-          };
+          if (messagesBatch.length > 0) {
+            parsedUpdate.messages = messagesBatch;
+          }
+
+          if (interrupts && interrupts.length > 0) {
+            parsedUpdate.__interrupt__ = interrupts;
+          }
+
+          if (parsedUpdate.messages || parsedUpdate.__interrupt__) {
+            yield {
+              event: 'updates',
+              data: parsedUpdate,
+            };
+          }
           break;
         }
         default:

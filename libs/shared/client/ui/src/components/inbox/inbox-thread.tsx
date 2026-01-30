@@ -7,27 +7,53 @@ import {
   useAssistantApi,
 } from '@assistant-ui/react';
 import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
 import { cn } from '../../lib/utils';
 import { Sparkles, ArrowDownIcon } from 'lucide-react';
 
 import { InboxComposer } from './inbox-composer';
 import { InboxUserMessage, InboxAssistantMessage } from './inbox-messages';
 
-// Tool UIs
+// Tool UIs - All registered tools
 import {
+  // Approval tools
   UpdateLinearTicketToolUI,
   SendSlackMessageToolUI,
   InternetSearchToolUI,
-} from '../tool-ui/approval/approval';
-import { WriteTodosToolUI } from '../tool-ui/plan/_adapter';
-import {
-  GenerateProjectUpdateTool,
-  GetInboxItemsTool,
+  CreateGitHubIssueToolUI,
+  ThinkToolUI,
+  // Plan tool
+  WriteTodosToolUI,
+  // Memory tools
   SearchMemoriesTool,
-} from '../tools/linea/LineaTools';
+  SaveMemoryTool,
+  GetBlockersTool,
+  GetDecisionsTool,
+  ResolveIdentityTool,
+  // Inbox tools
+  GetInboxItemsTool,
+  GetWorkspaceStatusTool,
+  // Linear skills
+  GetLinearIssuesTool,
+  GetLinearIssueDetailsTool,
+  SearchLinearIssuesTool,
+  GetLinearProjectStatusTool,
+  GetLinearTeamWorkloadTool,
+  GetLinearCycleStatusTool,
+  AddLinearCommentTool,
+  // Project update
+  GenerateProjectUpdateTool,
+} from '../tool-ui';
 
 // Types
-export type InboxItemType = 'blocker' | 'drift' | 'update' | 'coverage';
+export type InboxItemType =
+  | 'blocker'
+  | 'drift'
+  | 'stalled'
+  | 'update'
+  | 'coverage'
+  | 'risk'
+  | 'action_required';
 export type LinkedContext = any; // TODO: Import from a shared types file
 
 // Type config
@@ -45,6 +71,11 @@ const typeConfig: Record<
     color: 'text-amber-400',
     bgColor: 'bg-amber-500/15',
   },
+  stalled: {
+    label: 'Stalled',
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-500/15',
+  },
   update: {
     label: 'Update',
     color: 'text-sky-400',
@@ -55,6 +86,141 @@ const typeConfig: Record<
     color: 'text-violet-400',
     bgColor: 'bg-violet-500/15',
   },
+  risk: {
+    label: 'Risk',
+    color: 'text-red-400',
+    bgColor: 'bg-red-500/15',
+  },
+  action_required: {
+    label: 'Action Required',
+    color: 'text-indigo-400',
+    bgColor: 'bg-indigo-500/15',
+  },
+};
+
+const suggestionConfig: Record<
+  InboxItemType,
+  Array<{ prompt: string; title: string; subtitle: string }>
+> = {
+  blocker: [
+    {
+      prompt: "What's blocking this, and who owns the unblock?",
+      title: "Clarify the blocker",
+      subtitle: 'Identify dependency and owner',
+    },
+    {
+      prompt: 'Who can help resolve this faster?',
+      title: 'Suggest helpers',
+      subtitle: 'Find the right support',
+    },
+    {
+      prompt: 'Draft a short update for stakeholders about this blocker.',
+      title: 'Draft an update',
+      subtitle: 'Share context without noise',
+    },
+  ],
+  drift: [
+    {
+      prompt: 'What changed here, and why does it matter?',
+      title: 'Explain the drift',
+      subtitle: 'Surface scope or priority shifts',
+    },
+    {
+      prompt: 'What is the risk if we keep the new scope?',
+      title: 'Assess impact',
+      subtitle: 'Quantify trade-offs',
+    },
+    {
+      prompt: 'Suggest a decision path to realign priorities.',
+      title: 'Propose next steps',
+      subtitle: 'Bring it back on track',
+    },
+  ],
+  stalled: [
+    {
+      prompt: 'Why is this stalled, and what is the fastest unblock?',
+      title: 'Find the cause',
+      subtitle: 'Surface hidden friction',
+    },
+    {
+      prompt: 'Who should I check in with on this item?',
+      title: 'Check in',
+      subtitle: 'Nudge the right person',
+    },
+    {
+      prompt: 'Is this still relevant, or should we pause it?',
+      title: 'Triage relevance',
+      subtitle: 'Reduce wasted work',
+    },
+  ],
+  update: [
+    {
+      prompt: 'Summarize the real impact of this update.',
+      title: 'Summarize impact',
+      subtitle: 'Highlight what changed',
+    },
+    {
+      prompt: 'Draft a stakeholder update about this.',
+      title: 'Share context',
+      subtitle: 'Keep everyone aligned',
+    },
+    {
+      prompt: 'What is the best next action?',
+      title: 'Recommend action',
+      subtitle: 'Move forward intentionally',
+    },
+  ],
+  coverage: [
+    {
+      prompt: 'Who is overloaded and who has capacity?',
+      title: 'Balance workload',
+      subtitle: 'See capacity clearly',
+    },
+    {
+      prompt: 'Suggest a reassignment plan to reduce risk.',
+      title: 'Reassign work',
+      subtitle: 'Protect delivery',
+    },
+    {
+      prompt: 'Draft a check-in message for the team lead.',
+      title: 'Check in',
+      subtitle: 'Support without micromanaging',
+    },
+  ],
+  risk: [
+    {
+      prompt: 'What are the top risks and their root causes?',
+      title: 'Surface risks',
+      subtitle: 'Get the real story',
+    },
+    {
+      prompt: 'What is the smallest action to reduce this risk?',
+      title: 'Mitigate quickly',
+      subtitle: 'Focus on leverage',
+    },
+    {
+      prompt: 'Draft a risk update for stakeholders.',
+      title: 'Communicate risk',
+      subtitle: 'Share early, not late',
+    },
+  ],
+  action_required: [
+    {
+      prompt: 'Who should own this, and why?',
+      title: 'Assign ownership',
+      subtitle: 'Match strengths to work',
+    },
+    {
+      prompt: 'Break this into the smallest next steps.',
+      title: 'Break it down',
+      subtitle: 'Make progress easy',
+    },
+    {
+      prompt: 'Draft a short decision request for the team.',
+      title: 'Request decision',
+      subtitle: 'Move with clarity',
+    },
+  ],
 };
 
 interface InboxThreadProps {
@@ -118,13 +284,31 @@ export function InboxLineaThread({ itemId, itemContext }: InboxThreadProps) {
       </ThreadPrimitive.Root>
 
       {/* Register Tool UIs */}
+      {/* Memory tools */}
       <SearchMemoriesTool />
+      <SaveMemoryTool />
+      <GetBlockersTool />
+      <GetDecisionsTool />
+      <ResolveIdentityTool />
+      {/* Inbox tools */}
       <GetInboxItemsTool />
+      <GetWorkspaceStatusTool />
+      {/* Linear skills */}
+      <GetLinearIssuesTool />
+      <GetLinearIssueDetailsTool />
+      <SearchLinearIssuesTool />
+      <GetLinearProjectStatusTool />
+      <GetLinearTeamWorkloadTool />
+      <GetLinearCycleStatusTool />
+      <AddLinearCommentTool />
+      {/* Project update */}
       <GenerateProjectUpdateTool />
       {/* Human-in-the-loop Approval UIs */}
       <UpdateLinearTicketToolUI />
       <SendSlackMessageToolUI />
       <InternetSearchToolUI />
+      <CreateGitHubIssueToolUI />
+      <ThinkToolUI />
       {/* DeepAgents built-in write_todos for task planning */}
       <WriteTodosToolUI />
     </div>
@@ -162,6 +346,8 @@ function InboxThreadWelcome({
   };
 }) {
   const typeInfo = typeConfig[context.type];
+  const suggestions =
+    suggestionConfig[context.type] || suggestionConfig.update;
 
   return (
     <div className="aui-thread-welcome-root mx-auto my-auto flex w-full grow flex-col">
@@ -179,63 +365,59 @@ function InboxThreadWelcome({
             Hi, I&apos;m Linea
           </h1>
           <p className="aui-thread-welcome-subheading fade-in slide-in-from-bottom-1 animate-in text-muted-foreground text-lg delay-75 duration-200 max-w-md mb-6">
-            I&apos;m here to help you with this {context.type}. Ask me anything
-            or try one of the suggestions below.
+            I&apos;m here to help you with this {typeInfo.label.toLowerCase()}.
+            Ask me anything or try one of the suggestions below.
           </p>
+
+          <div className="mb-6 w-full max-w-xl rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm font-semibold text-foreground">
+                {context.title}
+              </div>
+              <Badge variant="outline" className="text-xs capitalize">
+                {context.priority.replace('_', ' ')}
+              </Badge>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span className="text-foreground/70">Type</span>
+                {typeInfo.label}
+              </span>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {context.summary
+                ? context.summary
+                : 'No summary yet. Ask Linea to pull context from Linear or Slack.'}
+            </p>
+          </div>
 
           {/* Quick action suggestions */}
           <div className="aui-thread-welcome-suggestions grid gap-2 md:grid-cols-3 w-full max-w-2xl">
-            <ThreadPrimitive.Suggestion
-              prompt="What's blocking this?"
-              send
-              asChild
-            >
-              <Button
-                variant="outline"
-                className="aui-thread-welcome-suggestion fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200 delay-100 h-auto flex-col items-start justify-start gap-1 rounded-xl px-4 py-3 text-left transition-all hover:bg-accent/50 hover:border-accent-foreground/20 hover:shadow-sm"
+            {suggestions.map((suggestion, index) => (
+              <ThreadPrimitive.Suggestion
+                key={suggestion.title}
+                prompt={suggestion.prompt}
+                send
+                asChild
               >
-                <span className="aui-thread-welcome-suggestion-text-1 font-medium text-sm">
-                  What&apos;s the blocker?
-                </span>
-                <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground text-xs">
-                  Identify blocking issues
-                </span>
-              </Button>
-            </ThreadPrimitive.Suggestion>
-            <ThreadPrimitive.Suggestion
-              prompt="Who should I assign this to?"
-              send
-              asChild
-            >
-              <Button
-                variant="outline"
-                className="aui-thread-welcome-suggestion fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200 delay-150 h-auto flex-col items-start justify-start gap-1 rounded-xl px-4 py-3 text-left transition-all hover:bg-accent/50 hover:border-accent-foreground/20 hover:shadow-sm"
-              >
-                <span className="aui-thread-welcome-suggestion-text-1 font-medium text-sm">
-                  Suggest assignee
-                </span>
-                <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground text-xs">
-                  Find the right person
-                </span>
-              </Button>
-            </ThreadPrimitive.Suggestion>
-            <ThreadPrimitive.Suggestion
-              prompt="What are the next steps to resolve this?"
-              send
-              asChild
-            >
-              <Button
-                variant="outline"
-                className="aui-thread-welcome-suggestion fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200 delay-200 h-auto flex-col items-start justify-start gap-1 rounded-xl px-4 py-3 text-left transition-all hover:bg-accent/50 hover:border-accent-foreground/20 hover:shadow-sm"
-              >
-                <span className="aui-thread-welcome-suggestion-text-1 font-medium text-sm">
-                  Next steps
-                </span>
-                <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground text-xs">
-                  Get action items
-                </span>
-              </Button>
-            </ThreadPrimitive.Suggestion>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'aui-thread-welcome-suggestion fade-in slide-in-from-bottom-2 animate-in fill-mode-both h-auto flex-col items-start justify-start gap-1 rounded-xl px-4 py-3 text-left transition-all hover:bg-accent/50 hover:border-accent-foreground/20 hover:shadow-sm',
+                    index === 0 && 'duration-200 delay-100',
+                    index === 1 && 'duration-200 delay-150',
+                    index === 2 && 'duration-200 delay-200',
+                  )}
+                >
+                  <span className="aui-thread-welcome-suggestion-text-1 font-medium text-sm">
+                    {suggestion.title}
+                  </span>
+                  <span className="aui-thread-welcome-suggestion-text-2 text-muted-foreground text-xs">
+                    {suggestion.subtitle}
+                  </span>
+                </Button>
+              </ThreadPrimitive.Suggestion>
+            ))}
           </div>
         </div>
       </div>

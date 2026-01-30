@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LINEA_STORE, LINEA_MODEL_FAST } from './tokens';
+import { PUB_SUB } from '@launchline/core-common';
+import type { RedisPubSub } from 'graphql-redis-subscriptions';
 import type { BaseStore } from '@langchain/langgraph';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type {
@@ -13,6 +15,8 @@ import type {
   InboxPriority,
   InboxStatus,
 } from './types';
+import { LineaEvents } from './linea.events';
+import { LineaEventType } from './thread.models';
 
 @Injectable()
 export class AssistantService {
@@ -23,6 +27,8 @@ export class AssistantService {
     private readonly store: BaseStore,
     @Inject(LINEA_MODEL_FAST)
     private readonly fastModel: BaseChatModel,
+    @Inject(PUB_SUB)
+    private readonly pubSub: RedisPubSub,
   ) {}
 
   async listThreads(
@@ -30,12 +36,24 @@ export class AssistantService {
     userId: string,
   ): Promise<ThreadListResponseDto> {
     const namespace = ['workspaces', workspaceId, 'threads', userId];
+    const activeLimit = 1000;
+    const archivedLimit = 500;
 
     try {
-      const results = await this.store.search(namespace, {
-        query: '*',
-        limit: 100,
-      });
+      const [activeResults, archivedResults] = await Promise.all([
+        this.store.search(namespace, {
+          query: '*',
+          filter: { archived: false },
+          limit: activeLimit,
+        }),
+        this.store.search(namespace, {
+          query: '*',
+          filter: { archived: true },
+          limit: archivedLimit,
+        }),
+      ]);
+
+      const results = [...(activeResults || []), ...(archivedResults || [])];
 
       const threads: ThreadDto[] = (results || []).map((item: StoreItem) => {
         const value = item.value || {};
@@ -55,7 +73,13 @@ export class AssistantService {
         };
       });
 
-      return { threads };
+      const sortedThreads = threads.sort((a, b) => {
+        const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+
+      return { threads: sortedThreads };
     } catch (error) {
       this.logger.error({ error }, '[AssistantService] listThreads error:');
 
@@ -237,6 +261,7 @@ Title:`;
     workspaceId: string,
     userId: string,
     candidate: InboxItemCandidate,
+    sessionId?: string,
   ): Promise<{ remoteId: string }> {
     const namespace = ['workspaces', workspaceId, 'threads', userId];
     const threadId = candidate.id;
@@ -263,6 +288,15 @@ Title:`;
     this.logger.debug(
       `Created inbox thread: ${threadId} of type ${candidate.type}`,
     );
+
+    await this.pubSub.publish(LineaEvents.INBOX_ITEM_CREATED, {
+      lineaChanged: {
+        changedAt: new Date().toISOString(),
+        type: LineaEventType.INBOX_ITEM_CREATED,
+        id: threadId,
+      },
+      sessionId,
+    });
 
     return { remoteId: threadId };
   }

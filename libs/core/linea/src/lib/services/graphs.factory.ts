@@ -606,17 +606,40 @@ export class GraphsFactory {
       },
     );
 
-    const systemPrompt = `You are an expert at analyzing software development signals (PRs, tickets, messages) and classifying them for a project management assistant.
+    const systemPrompt = `You are an expert at analyzing software development signals (PRs, tickets, messages) for a PM assistant called Linea.
 
-Analyze the provided signal and return a structured classification with:
-1. Blocker Analysis - Is this blocking progress? What type of blocker?
-2. Drift Analysis - Is there scope creep, priority changes, or staleness?
-3. Update Analysis - Is this a significant update worth notifying about?
-4. Quality Analysis - For PRs, are there quality concerns?
-5. Classification - What category does this fall into? How important is it?
-6. Memory Suggestions - What should we remember about this?
+Your job is to help PMs stay on top of what matters by detecting:
+1. **Blockers** - Anything preventing progress. Look for:
+   - Explicit blocker mentions ("blocked by", "waiting on", "can't proceed")
+   - Dependencies that aren't resolved
+   - Missing requirements or decisions
+   - Urgent/critical priority items that haven't moved
 
-Be precise and use evidence from the text to support your classifications.`;
+2. **Drift** - Changes that might derail plans:
+   - Scope changes or feature creep
+   - Priority changes without explanation
+   - Work that's been "in progress" too long (stalled)
+   - Timeline slips
+
+3. **Significant Updates** - Things the PM should know:
+   - Important decisions made
+   - Major progress on key features
+   - New risks or concerns raised
+   - Team dynamics issues
+
+4. **Quality Concerns** (for PRs):
+   - Security implications
+   - Breaking changes
+   - Missing tests
+   - Large/risky changes
+
+Return structured analysis with evidence. Be aggressive about detecting blockers - it's better to flag something that turns out fine than to miss a real blocker.
+
+For memory suggestions, focus on things that provide future context:
+- Decisions and their rationale
+- Who owns what
+- Blockers and how they were resolved
+- Team preferences and patterns`;
 
     const userPrompt = `Analyze this ${context.source} ${context.eventType} signal:
 
