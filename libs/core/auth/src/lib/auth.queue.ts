@@ -40,6 +40,7 @@ export class AuthQueue {
           payload.role === WorkspaceMemberRole.MEMBER
             ? UserRole.WORKSPACE_MEMBER
             : UserRole.WORKSPACE_ADMIN,
+          payload.workspaceId,
           payload.fullName,
         );
 

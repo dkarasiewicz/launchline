@@ -6,13 +6,13 @@ const openSourceBenefits = [
     icon: Code2,
     title: 'Transparent by design',
     description:
-      'Audit the code. Understand the logic. No black boxes or hidden metrics.',
+      'Audit the agent logic and guardrails. No black boxes or hidden metrics.',
   },
   {
     icon: Users,
     title: 'Community-driven',
     description:
-      'Contribute features, report issues, and help shape how teams work.',
+      'Contribute features, report issues, and shape responsible automation.',
   },
   {
     icon: Shield,
@@ -34,8 +34,8 @@ export function OpenSourceSection() {
             Built in the open
           </h2>
           <p className="text-base text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Launchline's core is open source. We believe PM tools should be
-            auditable, extensible, and community-owned.
+            Launchline's core is open source. Autonomous copilot software must
+            be auditable, extensible, and community-owned.
           </p>
         </div>
 

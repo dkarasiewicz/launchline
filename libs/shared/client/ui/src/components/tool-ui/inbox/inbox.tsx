@@ -1,15 +1,15 @@
 'use client';
 
 /**
- * Get Inbox Items Tool UI
+ * Inbox Tool UIs
  *
- * Displays inbox items in a DataTable with proper formatting.
+ * Displays inbox items and workspace status.
  */
 
 import { useState, useEffect } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Inbox } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Inbox, Activity } from 'lucide-react';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
 import { Column } from '../data-table/types';
@@ -115,7 +115,7 @@ function ThinkingLoader({
 
 export const GetInboxItemsToolUI = makeAssistantToolUI<
   GetInboxItemsArgs,
-  string
+  unknown
 >({
   toolName: 'get_inbox_items',
   render: function GetInboxItemsUI({ args, result, status }) {
@@ -132,9 +132,15 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
       }
     }, [status.type]);
 
-    let resultObj: GetInboxItemsResult | undefined;
+    let resultObj: (GetInboxItemsResult & { error?: string }) | undefined;
     try {
-      resultObj = result ? JSON.parse(result) : undefined;
+      if (typeof result === 'string') {
+        resultObj = result ? JSON.parse(result) : undefined;
+      } else if (result && typeof result === 'object') {
+        resultObj = result as GetInboxItemsResult & { error?: string };
+      } else {
+        resultObj = undefined;
+      }
     } catch {
       resultObj = undefined;
     }
@@ -145,30 +151,29 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full min-w-[400px] max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Inbox className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Loading inbox...' : `Found ${items.length} items`}
-            </CardTitle>
-          </div>
-          {(args.priority || args.type) && (
-            <div className="flex gap-2 mt-1">
-              {args.priority && (
-                <Badge variant="secondary" className="text-xs">
-                  {args.priority} priority
-                </Badge>
-              )}
-              {args.type && (
-                <Badge variant="outline" className="text-xs">
-                  {args.type.replace(/_/g, ' ')}
-                </Badge>
-              )}
+        <CardContent className="pt-4">
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Loading inbox...' : `Found ${items.length} items`}
+              </p>
             </div>
-          )}
-        </CardHeader>
-
-        <CardContent className="pt-0">
+            {(args.priority || args.type) && (
+              <div className="flex gap-2 mt-1">
+                {args.priority && (
+                  <Badge variant="secondary" className="text-xs">
+                    {args.priority} priority
+                  </Badge>
+                )}
+                {args.type && (
+                  <Badge variant="outline" className="text-xs">
+                    {args.type.replace(/_/g, ' ')}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
           {isRunning && !showContent && (
             <ThinkingLoader message="Fetching inbox items..." />
           )}
@@ -184,10 +189,71 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
             </DataTableErrorBoundary>
           )}
 
-          {showContent && !hasItems && !isRunning && (
+          {showContent && resultObj?.error && !isRunning && (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              {resultObj.error}
+            </p>
+          )}
+
+          {showContent && !hasItems && !isRunning && !resultObj?.error && (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No inbox items found.
             </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// GET WORKSPACE STATUS TOOL UI
+// ============================================================================
+
+type GetWorkspaceStatusArgs = {
+  includeMetrics?: boolean;
+};
+
+export const GetWorkspaceStatusToolUI = makeAssistantToolUI<
+  GetWorkspaceStatusArgs,
+  string
+>({
+  toolName: 'get_workspace_status',
+  render: function GetWorkspaceStatusUI({ args, result, status }) {
+    const [showContent, setShowContent] = useState(false);
+
+    useEffect(() => {
+      if (status.type === 'running') {
+        setShowContent(false);
+        const timer = setTimeout(() => setShowContent(true), 300);
+        return () => clearTimeout(timer);
+      } else {
+        setShowContent(true);
+      }
+    }, [status.type]);
+
+    const isRunning = status.type === 'running';
+
+    return (
+      <Card className="w-full max-w-lg overflow-hidden my-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-indigo-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Loading status...' : 'Workspace Status'}
+            </p>
+            {args.includeMetrics && (
+              <Badge variant="secondary" className="text-xs ml-auto">
+                + Metrics
+              </Badge>
+            )}
+          </div>
+          {isRunning && !showContent ? (
+            <ThinkingLoader message="Gathering workspace status..." />
+          ) : (
+            <div className="text-sm whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none">
+              {result}
+            </div>
           )}
         </CardContent>
       </Card>

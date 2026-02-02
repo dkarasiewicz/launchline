@@ -8,6 +8,20 @@
       "when": 1766353565143,
       "tag": "0000_shocking_reptil",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1769697864446,
+      "tag": "0001_oval_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1769974559684,
+      "tag": "0002_small_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

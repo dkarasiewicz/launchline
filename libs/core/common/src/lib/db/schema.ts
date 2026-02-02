@@ -36,6 +36,21 @@ export const notificationPriority = pgEnum('NotificationPriority', [
   'HIGH',
   'URGENT',
 ]);
+export const integrationType = pgEnum('IntegrationType', [
+  'linear',
+  'slack',
+  'github',
+  'jira',
+  'notion',
+  'google',
+]);
+export const integrationStatus = pgEnum('IntegrationStatus', [
+  'pending',
+  'active',
+  'error',
+  'expired',
+  'revoked',
+]);
 
 export const user = pgTable(
   'User',
@@ -48,6 +63,7 @@ export const user = pgTable(
     isOnboardingComplete: boolean().default(false).notNull(),
     role: userRole().default('WORKSPACE_ADMIN').notNull(),
     fullName: text(),
+    primaryWorkspaceId: text().notNull(),
   },
   (table) => [index('User_email_idx').using('btree', table.email.nullsLast())],
 );
@@ -190,5 +206,33 @@ export const workspaceInvite = pgTable(
     })
       .onUpdate('cascade')
       .onDelete('cascade'),
+  ],
+);
+
+export const integration = pgTable(
+  'Integration',
+  {
+    id: text().primaryKey().notNull(),
+    createdAt: timestamp({ precision: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp({ precision: 3 }).notNull(),
+    workspaceId: text().notNull(),
+    type: integrationType().notNull(),
+    status: integrationStatus().default('pending').notNull(),
+    name: text(),
+    description: text(),
+    externalAccountId: text(),
+    externalAccountName: text(),
+    externalOrganizationId: text(),
+    externalOrganizationName: text(),
+    scopes: text(),
+    accessToken: text(),
+    refreshToken: text(),
+    tokenExpiresAt: timestamp({ precision: 3 }),
+    lastSyncAt: timestamp({ precision: 3 }),
+  },
+  (table) => [
+    index('Integration_workspaceId_idx').using('btree', table.workspaceId),
+    index('Integration_type_idx').using('btree', table.type),
+    index('Integration_status_idx').using('btree', table.status),
   ],
 );

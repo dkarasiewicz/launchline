@@ -22,6 +22,7 @@ import {
 } from '@launchline/core-common';
 import { AuthModule } from '@launchline/core-auth';
 import { WorkspaceModule } from '@launchline/core-workspace';
+import { IntegrationModule } from '@launchline/core-integration';
 import { LineaModule } from '@launchline/core-linea';
 import { config, validate } from './configuration';
 import {
@@ -86,6 +87,14 @@ import {
               (req as Record<string, unknown> | undefined)?.user ||
               (extra as { request: Record<string, unknown> } | undefined)
                 ?.request?.user;
+            const currentWorkspaceId =
+              (req as Record<string, Record<string, unknown>> | undefined)
+                ?.session.currentWorkspaceId ||
+              (
+                extra as
+                  | { request: Record<string, Record<string, unknown>> }
+                  | undefined
+              )?.request?.session.currentWorkspaceId;
             const marketingId = res
               ? getOrCreateMarketingSessionId(
                   res as Response,
@@ -99,6 +108,7 @@ import {
               user,
               sessionId,
               marketingId,
+              currentWorkspaceId,
             };
           },
           plugins: [
@@ -157,6 +167,7 @@ import {
     CommonModule,
     AuthModule,
     WorkspaceModule,
+    IntegrationModule,
     LineaModule,
   ],
 })

@@ -28,6 +28,56 @@ registerEnumType(MessageRole, {
   description: 'The role of a message sender',
 });
 
+// Inbox-specific enums
+export enum InboxItemType {
+  BLOCKER = 'blocker',
+  DRIFT = 'drift',
+  UPDATE = 'update',
+  STALLED = 'stalled',
+  COVERAGE = 'coverage',
+  RISK = 'risk',
+  ACTION_REQUIRED = 'action_required',
+}
+
+registerEnumType(InboxItemType, {
+  name: 'InboxItemType',
+  description: 'The type of inbox item',
+});
+
+export enum InboxPriority {
+  CRITICAL = 'critical',
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
+}
+
+registerEnumType(InboxPriority, {
+  name: 'InboxPriority',
+  description: 'The priority level of an inbox item',
+});
+
+export enum InboxStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  ACTIONED = 'actioned',
+  DISMISSED = 'dismissed',
+  AUTO_RESOLVED = 'auto_resolved',
+}
+
+registerEnumType(InboxStatus, {
+  name: 'InboxStatus',
+  description: 'The status of an inbox item',
+});
+
+export enum LineaEventType {
+  INBOX_ITEM_CREATED = 'inbox_item_created',
+}
+
+registerEnumType(LineaEventType, {
+  name: 'LineaEventType',
+  description: 'Linea change event type',
+});
+
 @ObjectType()
 export class Thread {
   @Field()
@@ -47,13 +97,16 @@ export class Thread {
 
   // Inbox metadata
   @Field({ nullable: true })
-  inboxItemType?: string; // 'blocker' | 'drift' | 'update' | 'coverage'
+  isInboxThread?: boolean;
 
-  @Field({ nullable: true })
-  inboxPriority?: string; // 'critical' | 'high' | 'medium' | 'low'
+  @Field(() => InboxItemType, { nullable: true })
+  inboxItemType?: InboxItemType;
 
-  @Field({ nullable: true })
-  inboxStatus?: string; // 'new' | 'pending' | 'actioned' | 'auto-resolved' | 'closed' | 'dismissed'
+  @Field(() => InboxPriority, { nullable: true })
+  inboxPriority?: InboxPriority;
+
+  @Field(() => InboxStatus, { nullable: true })
+  inboxStatus?: InboxStatus;
 
   @Field({ nullable: true })
   summary?: string;
@@ -63,6 +116,18 @@ export class Thread {
 
   @Field({ nullable: true })
   featureId?: string;
+}
+
+@ObjectType()
+export class LineaChangeEvent {
+  @Field()
+  id!: string;
+
+  @Field(() => LineaEventType)
+  type!: LineaEventType;
+
+  @Field()
+  changedAt!: Date;
 }
 
 @ObjectType()

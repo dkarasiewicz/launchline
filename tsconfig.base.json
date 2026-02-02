@@ -23,7 +23,8 @@
       "@launchline/ui": ["libs/shared/client/ui/src/index.ts"],
       "@launchline/ui/*": ["libs/shared/client/ui/src/*"],
       "@launchline/ui/server": ["libs/shared/client/ui/src/server.ts"],
-      "@launchline/core-linea": ["libs/core/linea/src/index.ts"]
+      "@launchline/core-linea": ["libs/core/linea/src/index.ts"],
+      "@launchline/core-integration": ["libs/core/integration/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

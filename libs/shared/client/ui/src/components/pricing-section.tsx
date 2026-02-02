@@ -3,9 +3,11 @@ import { Button } from './ui/button';
 import { ArrowRight, Sparkles, Check } from 'lucide-react';
 
 const earlyAccessFeatures = [
-  'Full inbox experience',
-  'Linear, Slack, GitHub integrations',
-  'AI-powered suggestions',
+  'Autonomous heartbeat & inbox',
+  'Slack-first interface',
+  'Linear + Google context',
+  'Team map + collaboration insights',
+  'Workspace memory & decisions',
   'Priority support & feedback channel',
   'Shape the product roadmap',
 ];
@@ -22,8 +24,8 @@ export function PricingSection() {
             Join the founding users
           </h2>
           <p className="text-base text-muted-foreground max-w-lg mx-auto leading-relaxed">
-            We're onboarding a small group of teams who want transparency
-            without micromanagement. Limited spots available.
+            We're onboarding a small group of teams who want an autonomous,
+            transparent copilot with guardrails. Limited spots available.
           </p>
         </div>
 

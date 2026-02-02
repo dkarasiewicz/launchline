@@ -3,56 +3,56 @@ import {
   AlertTriangle,
   TrendingDown,
   FileText,
-  GitBranch,
+  RefreshCw,
   Hand,
 } from 'lucide-react';
 
 const features = [
   {
     icon: Inbox,
-    title: 'PM Inbox',
+    title: 'Slack-first Inbox',
     description:
-      'Your action queue for blockers, decisions, and drift. One place for everything that needs attention.',
+      'Your action queue for blockers, decisions, and drift. Works where your team already chats.',
     accent: 'text-accent',
     bg: 'bg-accent/15',
   },
   {
     icon: AlertTriangle,
-    title: 'Blocker Detection',
+    title: 'Collaboration graph',
     description:
-      'Automatically surfaces stalled work, dependency conflicts, and blocked teammates.',
+      'See how tickets, PRs, projects, and people connect — so silos and bottlenecks are obvious.',
     accent: 'text-status-error',
     bg: 'bg-status-error/15',
   },
   {
     icon: TrendingDown,
-    title: 'Priority Drift Alerts',
+    title: 'Scheduled check-ins',
     description:
-      'Know when execution diverges from plan. Catch scope changes before they compound.',
+      'Run daily or weekly jobs that draft updates, check blockers, and keep teams aligned.',
     accent: 'text-status-warning',
     bg: 'bg-status-warning/15',
   },
   {
-    icon: FileText,
-    title: 'Auto Project Updates',
+    icon: RefreshCw,
+    title: 'Autonomous heartbeat',
     description:
-      'Draft stakeholder updates from real work. No more status meeting prep.',
-    accent: 'text-status-info',
-    bg: 'bg-status-info/15',
-  },
-  {
-    icon: GitBranch,
-    title: 'Linear & GitHub Sync',
-    description:
-      'Bidirectional sync keeps everything aligned. Work in the tools you already use.',
+      'Every 30 minutes, Linea scans for drift, stalled work, and risks before they explode.',
     accent: 'text-muted-foreground',
     bg: 'bg-secondary',
   },
   {
-    icon: Hand,
-    title: 'Human-in-the-Loop',
+    icon: FileText,
+    title: 'Workspace skills',
     description:
-      'You approve; Launchline executes. Stay in control while moving faster.',
+      'Add playbooks and guardrails so Linea adapts to each workspace.',
+    accent: 'text-status-info',
+    bg: 'bg-status-info/15',
+  },
+  {
+    icon: Hand,
+    title: 'Safe automation',
+    description:
+      'Approve actions or let Linea run in a sandbox — always transparent, never risky.',
     accent: 'text-status-success',
     bg: 'bg-status-success/15',
   },
@@ -68,7 +68,7 @@ export function SolutionSection() {
               Features
             </p>
             <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground">
-              AI-augmented execution platform
+              Autonomous product copilot
             </h2>
           </div>
           <p className="text-sm text-muted-foreground md:text-right max-w-xs">

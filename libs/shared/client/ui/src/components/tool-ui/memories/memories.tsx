@@ -1,17 +1,26 @@
 'use client';
 
 /**
- * Search Memories Tool UI
+ * Memory Tool UIs
  *
- * Displays memory search results in a DataTable with proper formatting.
+ * UI components for memory-related tools.
  */
 
 import { useState, useEffect } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Brain } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import {
+  Brain,
+  AlertTriangle,
+  Lightbulb,
+  User,
+  Save,
+  CheckCircle,
+} from 'lucide-react';
+import { Card, CardContent } from '../../ui/card';
+import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
 import { Column } from '../data-table/types';
+import { cn } from '../../../lib/utils';
 
 // ============================================================================
 // Types
@@ -20,19 +29,21 @@ import { Column } from '../data-table/types';
 type SearchMemoriesArgs = {
   query: string;
   limit?: number;
-  categories?: string[];
+  namespace?: string;
 };
 
 type MemoryRow = {
   id: string;
   content: string;
   category: string;
+  namespace: string;
   importance: number;
   timestamp: string;
 };
 
 type SearchMemoriesResult = {
   memories: MemoryRow[];
+  error?: string;
 };
 
 // ============================================================================
@@ -45,6 +56,21 @@ const memoryColumns: Column<MemoryRow>[] = [
     label: 'Memory',
     priority: 'primary',
     truncate: true,
+  },
+  {
+    key: 'namespace',
+    label: 'Scope',
+    format: {
+      kind: 'badge',
+      colorMap: {
+        workspace: 'info',
+        team: 'success',
+        product: 'warning',
+        project: 'info',
+        decision: 'success',
+        blocker: 'danger',
+      },
+    },
   },
   {
     key: 'category',
@@ -137,45 +163,89 @@ export const SearchMemoriesToolUI = makeAssistantToolUI<
     }, [status.type]);
 
     let resultObj: SearchMemoriesResult | undefined;
+    let rawText: string | undefined;
     try {
       resultObj = result ? JSON.parse(result) : undefined;
     } catch {
+      rawText = result || undefined;
       resultObj = undefined;
     }
 
     const memories = resultObj?.memories || [];
+    const errorMessage = resultObj?.error;
     const hasResults = memories.length > 0;
 
     // Convert importance to string for status mapping
     const formattedMemories = memories.map((m) => ({
       ...m,
-      importance: String(m.importance),
+      importance: String(
+        Math.min(5, Math.max(1, Math.round((m.importance || 0) * 5))),
+      ),
     }));
 
     const isRunning = status.type === 'running';
+    const hasError = Boolean(errorMessage);
+    const topMemory = memories[0];
 
     return (
       <Card className="w-full min-w-[400px] max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning
-                ? 'Searching memories...'
-                : `Found ${memories.length} memories`}
-            </CardTitle>
+        <CardContent className="pt-4">
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning
+                  ? 'Searching memories...'
+                  : hasError
+                    ? 'Memory search failed'
+                    : `Found ${memories.length} memories`}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Query: &quot;{args.query}&quot;
+              {args.namespace && (
+                <span className="ml-2">in {args.namespace}</span>
+              )}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge variant="outline" className="text-[11px]">
+                Scope: {args.namespace ?? 'all'}
+              </Badge>
+              {typeof args.limit === 'number' && (
+                <Badge variant="outline" className="text-[11px]">
+                  Limit: {args.limit}
+                </Badge>
+              )}
+              {!isRunning && !hasError && (
+                <Badge variant="secondary" className="text-[11px]">
+                  Results: {memories.length}
+                </Badge>
+              )}
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Query: &quot;{args.query}&quot;
-            {args.categories && args.categories.length > 0 && (
-              <span className="ml-2">in {args.categories.join(', ')}</span>
-            )}
-          </p>
-        </CardHeader>
-
-        <CardContent className="pt-0">
           {isRunning && !showContent && (
             <ThinkingLoader message="Searching memories..." />
+          )}
+
+          {showContent && hasError && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {showContent && !hasError && topMemory && (
+            <div className="mb-3 rounded-lg border border-border/40 bg-background/70 p-3 text-sm">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="uppercase tracking-widest">Most relevant</span>
+                <Badge variant="outline" className="text-[11px] capitalize">
+                  {topMemory.namespace}
+                </Badge>
+              </div>
+              <p className="mt-2 font-medium text-foreground">
+                {topMemory.content}
+              </p>
+            </div>
           )}
 
           {showContent && hasResults && (
@@ -189,10 +259,193 @@ export const SearchMemoriesToolUI = makeAssistantToolUI<
             </DataTableErrorBoundary>
           )}
 
-          {showContent && !hasResults && !isRunning && (
+          {showContent && !hasResults && !isRunning && !hasError && (
             <p className="text-sm text-muted-foreground py-4 text-center">
-              No memories found matching your query.
+              {rawText || 'No memories found matching your query.'}
             </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// SAVE MEMORY TOOL UI
+// ============================================================================
+
+type SaveMemoryArgs = {
+  content: string;
+  summary: string;
+  namespace: string;
+  category: string;
+  importance?: number;
+  entityId?: string;
+};
+
+export const SaveMemoryToolUI = makeAssistantToolUI<SaveMemoryArgs, string>({
+  toolName: 'save_memory',
+  render: function SaveMemoryUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const isSuccess = result?.includes('successfully');
+
+    return (
+      <Card className="w-full max-w-md overflow-hidden my-2">
+        <CardContent className="pt-4 space-y-3">
+          <div className="flex items-center gap-2">
+            {isSuccess ? (
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            ) : (
+              <Save className="h-4 w-4 text-primary" />
+            )}
+            <p className="text-sm font-medium text-foreground">
+              {isRunning
+                ? 'Saving memory...'
+                : isSuccess
+                  ? 'Memory Saved'
+                  : 'Save Memory'}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Badge variant="outline">{args.namespace}</Badge>
+            <Badge variant="secondary">{args.category}</Badge>
+            {args.importance && (
+              <Badge variant="secondary">Importance: {args.importance}</Badge>
+            )}
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground mb-1">Summary</p>
+            <p className="text-sm">{args.summary}</p>
+          </div>
+          {result && (
+            <p
+              className={cn(
+                'text-xs',
+                isSuccess ? 'text-green-600' : 'text-muted-foreground',
+              )}
+            >
+              {result}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// GET BLOCKERS TOOL UI
+// ============================================================================
+
+type GetBlockersArgs = {
+  limit?: number;
+};
+
+export const GetBlockersToolUI = makeAssistantToolUI<GetBlockersArgs, string>({
+  toolName: 'get_blockers',
+  render: function GetBlockersUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const isEmpty = result === 'No active blockers found.';
+
+    return (
+      <Card className="w-full max-w-lg overflow-hidden my-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Finding blockers...' : 'Active Blockers'}
+            </p>
+          </div>
+          {isRunning ? (
+            <ThinkingLoader message="Searching for blockers..." />
+          ) : isEmpty ? (
+            <div className="flex items-center gap-2 text-green-600 py-2">
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-sm">No active blockers found!</span>
+            </div>
+          ) : (
+            <div className="text-sm whitespace-pre-wrap">{result}</div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// GET DECISIONS TOOL UI
+// ============================================================================
+
+type GetDecisionsArgs = {
+  limit?: number;
+};
+
+export const GetDecisionsToolUI = makeAssistantToolUI<GetDecisionsArgs, string>(
+  {
+    toolName: 'get_decisions',
+    render: function GetDecisionsUI({ args, result, status }) {
+      const isRunning = status.type === 'running';
+      const isEmpty = result === 'No recent decisions found.';
+
+      return (
+        <Card className="w-full max-w-lg overflow-hidden my-2">
+          <CardContent className="pt-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-emerald-500" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Finding decisions...' : 'Recent Decisions'}
+              </p>
+            </div>
+            {isRunning ? (
+              <ThinkingLoader message="Searching for decisions..." />
+            ) : isEmpty ? (
+              <p className="text-sm text-muted-foreground py-2">
+                No recent decisions found.
+              </p>
+            ) : (
+              <div className="text-sm whitespace-pre-wrap">{result}</div>
+            )}
+          </CardContent>
+        </Card>
+      );
+    },
+  },
+);
+
+// ============================================================================
+// RESOLVE IDENTITY TOOL UI
+// ============================================================================
+
+type ResolveIdentityArgs = {
+  name: string;
+};
+
+export const ResolveIdentityToolUI = makeAssistantToolUI<
+  ResolveIdentityArgs,
+  string
+>({
+  toolName: 'resolve_identity',
+  render: function ResolveIdentityUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const notFound = result?.includes('No linked identity found');
+
+    return (
+      <Card className="w-full max-w-md overflow-hidden my-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <User className="h-4 w-4 text-blue-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Resolving identity...' : `Identity: ${args.name}`}
+            </p>
+          </div>
+          {isRunning ? (
+            <ThinkingLoader message={`Looking up ${args.name}...`} />
+          ) : notFound ? (
+            <p className="text-sm text-muted-foreground">{result}</p>
+          ) : (
+            <div className="text-sm whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none">
+              {result}
+            </div>
           )}
         </CardContent>
       </Card>

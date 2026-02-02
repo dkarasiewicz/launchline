@@ -14,6 +14,15 @@ export const THREADS_QUERY = gql`
         remoteId
         status
         title
+        createdAt
+        updatedAt
+        isInboxThread
+        inboxItemType
+        inboxPriority
+        inboxStatus
+        summary
+        projectId
+        featureId
       }
     }
   }
@@ -105,6 +114,28 @@ export const APPEND_MESSAGE_MUTATION = gql`
   }
 `;
 
+/**
+ * Get a single thread by ID
+ */
+export const THREAD_QUERY = gql`
+  query Thread($threadId: String!) {
+    thread(threadId: $threadId) {
+      remoteId
+      status
+      title
+      createdAt
+      updatedAt
+      isInboxThread
+      inboxItemType
+      inboxPriority
+      inboxStatus
+      summary
+      projectId
+      featureId
+    }
+  }
+`;
+
 // ============================================================================
 // Thread Queries (as strings for fetch-based client)
 // ============================================================================
@@ -116,7 +147,35 @@ export const THREADS_QUERY_STRING = `
         remoteId
         status
         title
+        createdAt
+        updatedAt
+        isInboxThread
+        inboxItemType
+        inboxPriority
+        inboxStatus
+        summary
+        projectId
+        featureId
       }
+    }
+  }
+`;
+
+export const THREAD_QUERY_STRING = `
+  query Thread($threadId: String!) {
+    thread(threadId: $threadId) {
+      remoteId
+      status
+      title
+      createdAt
+      updatedAt
+      isInboxThread
+      inboxItemType
+      inboxPriority
+      inboxStatus
+      summary
+      projectId
+      featureId
     }
   }
 `;
@@ -187,6 +246,15 @@ export interface ThreadData {
   remoteId: string;
   status: 'REGULAR' | 'ARCHIVED';
   title?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  isInboxThread?: boolean;
+  inboxItemType?: string; // 'blocker' | 'drift' | 'update' | 'coverage'
+  inboxPriority?: string; // 'critical' | 'high' | 'medium' | 'low'
+  inboxStatus?: string; // 'new' | 'pending' | 'actioned' | 'auto-resolved' | 'closed' | 'dismissed'
+  summary?: string;
+  projectId?: string;
+  featureId?: string;
 }
 
 export interface ThreadsQueryResult {

@@ -123,8 +123,11 @@ export function OtpStep(props: OtpStepProps) {
         throw new Error(errorData.message || 'Invalid code. Please try again.');
       }
 
-      // Successfully verified - redirect to inbox
-      router.push(redirectTo);
+      if (isStandalone) {
+        router.push(redirectTo);
+      } else {
+        props.onNext();
+      }
     } catch (err) {
       setError(
         err instanceof Error

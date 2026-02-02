@@ -8,15 +8,15 @@ import {
 import {
   type LangChainMessage,
   LangGraphMessagesEvent,
+  useLangGraphRuntime,
 } from '@assistant-ui/react-langgraph';
 import { createThreadListAdapter } from '../../lib/assistant/thread-adapter';
 import { BytesLineDecoder, SSEDecoder } from './sse';
-import { useLangGraphRuntime } from './langraph-runtime';
 import { ThreadState } from '@langchain/langgraph-sdk';
 import { constructMessageFromParams } from './langchain-utils';
 import { type SerializedConstructor } from '@langchain/core/load/serializable';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
 
 interface LaunchlineRuntimeProviderProps {
   children: ReactNode;
@@ -28,9 +28,11 @@ interface LaunchlineRuntimeProviderProps {
 async function* streamMessages({
   threadId,
   messages,
+  abortSignal,
 }: {
   threadId: string;
   messages: LangChainMessage[];
+  abortSignal?: AbortSignal;
 }): AsyncGenerator<LangGraphMessagesEvent<LangChainMessage>> {
   const url = `${API_BASE}/assistant/stream?threadId=${threadId.trim()}`;
 
@@ -41,24 +43,28 @@ async function* streamMessages({
     },
     body: JSON.stringify({ input: { messages } }),
     credentials: 'include',
+    signal: abortSignal,
   });
 
   if (!response.ok || !response.body) {
     throw new Error(`Failed to stream messages: ${response.statusText}`);
   }
 
-  const stream = response.body.pipeThrough(BytesLineDecoder()).pipeThrough<
-    | {
-        data: [SerializedConstructor, Record<string, unknown>];
-        event: 'messages';
-      }
-    | {
-        data: Record<string, unknown>;
-        event: 'updates';
-      }
-  >(SSEDecoder());
+  const stream = response.body
+    .pipeThrough(BytesLineDecoder())
+    .pipeThrough(SSEDecoder());
 
   const reader = stream.getReader();
+  const parseMessage = (
+    raw: SerializedConstructor | Record<string, unknown>,
+  ): LangChainMessage | null => {
+    try {
+      return constructMessageFromParams(raw as SerializedConstructor);
+    } catch (error) {
+      console.warn('[LaunchlineRuntime] Failed to parse stream message', error);
+      return null;
+    }
+  };
 
   try {
     while (true) {
@@ -69,56 +75,135 @@ async function* streamMessages({
       if (!value) continue;
 
       switch (value.event) {
-        case 'messages': {
-          const parsedMessage = constructMessageFromParams(value.data[0]);
+        case 'messages':
+        case 'messages-tuple': {
+          const tuple = Array.isArray(value.data) ? value.data : null;
+          const rawMessage = tuple?.[0] ?? value.data;
+          const parsedMessage = parseMessage(
+            rawMessage as SerializedConstructor,
+          );
 
-          if (parsedMessage.type !== 'ai') {
+          if (
+            !parsedMessage ||
+            (parsedMessage.type !== 'ai' &&
+              parsedMessage.type !== ('assistant' as string))
+          ) {
             continue;
           }
 
-          parsedMessage.type = 'AIMessageChunk' as 'ai'; // Mark as chunk
+          parsedMessage.type = 'AIMessageChunk' as 'ai';
 
           yield {
             event: 'messages',
-            data: [parsedMessage, value.data[1]],
+            data: [
+              parsedMessage,
+              (tuple?.[1] ?? {}) as Record<string, unknown>,
+            ],
+          };
+          break;
+        }
+        case 'messages/partial':
+        case 'messages/complete': {
+          if (!Array.isArray(value.data)) {
+            break;
+          }
+
+          const parsedMessages = value.data
+            .map((message: SerializedConstructor) =>
+              parseMessage(
+                message as SerializedConstructor | Record<string, unknown>,
+              ),
+            )
+            .filter(
+              (message: LangChainMessage): message is LangChainMessage =>
+                !!message &&
+                ['ai', 'tool', 'human', 'system'].includes(message.type),
+            );
+
+          if (parsedMessages.length === 0) {
+            break;
+          }
+
+          yield {
+            event: value.event,
+            data: parsedMessages,
           };
           break;
         }
         case 'updates': {
-          if (value.data.__interrupt__) {
-            yield {
-              event: 'updates',
-              data: value.data,
-            };
+          const updatePayload = value.data as Record<string, unknown>;
 
+          if (!updatePayload || typeof updatePayload !== 'object') {
             break;
           }
 
-          const rawUpdate = value.data[Object.keys(value.data)[0]] as {
-            messages?: SerializedConstructor[];
-            __interrupt__?: unknown[];
-          };
-          const parsedUpdate: {
-            messages?: LangChainMessage[];
-            __interrupt__?: unknown[];
-          } = {};
+          const messagesBatch: LangChainMessage[] = [];
+          let interrupts: unknown[] | undefined;
 
-          parsedUpdate.__interrupt__ = rawUpdate.__interrupt__;
+          const entries = Object.entries(updatePayload).filter(
+            ([, value]) => value !== undefined,
+          );
+          const sortedEntries = [
+            ...entries.filter(([key]) => key !== 'tools'),
+            ...entries.filter(([key]) => key === 'tools'),
+          ];
 
-          if (rawUpdate.messages) {
-            parsedUpdate.messages = rawUpdate.messages.map(
-              constructMessageFromParams,
-            ) as LangChainMessage[];
+          for (const [, update] of sortedEntries) {
+            const payload = update as
+              | {
+                  messages?: SerializedConstructor[];
+                  __interrupt__?: unknown[];
+                }
+              | undefined;
+
+            if (!payload || typeof payload !== 'object') {
+              continue;
+            }
+
+            if (Array.isArray(payload.__interrupt__)) {
+              interrupts = payload.__interrupt__;
+            }
+
+            if (Array.isArray(payload.messages)) {
+              const parsedMessages = payload.messages
+                .map((message) =>
+                  parseMessage(
+                    message as SerializedConstructor | Record<string, unknown>,
+                  ),
+                )
+                .filter(
+                  (message): message is LangChainMessage =>
+                    !!message &&
+                    ['ai', 'tool', 'human', 'system'].includes(message.type),
+                );
+              messagesBatch.push(...parsedMessages);
+            }
           }
 
-          yield {
-            event: 'updates',
-            data: parsedUpdate,
-          };
+          if (messagesBatch.length > 0) {
+            yield {
+              event: 'messages/partial',
+              data: messagesBatch,
+            };
+          }
+
+          if (interrupts && interrupts.length > 0) {
+            yield {
+              event: 'updates',
+              data: { __interrupt__: interrupts },
+            };
+          }
           break;
         }
         default:
-          console.warn(`Unknown event type: ${value}`);
+          if (value.event && value.data !== undefined) {
+            yield {
+              event: value.event,
+              data: value.data,
+            } as LangGraphMessagesEvent<LangChainMessage>;
+          } else {
+            console.warn(`Unknown event type: ${value}`);
+          }
       }
     }
   } finally {
@@ -158,7 +243,7 @@ export function LaunchlineRuntimeProvider({
     runtimeHook: () =>
       // eslint-disable-next-line react-hooks/rules-of-hooks
       useLangGraphRuntime({
-        stream: async function* (messages, { initialize }) {
+        stream: async function* (messages, { initialize, abortSignal }) {
           const data = await initialize();
           const { remoteId } = data;
 
@@ -167,6 +252,7 @@ export function LaunchlineRuntimeProvider({
           const generator = streamMessages({
             threadId: remoteId,
             messages,
+            abortSignal,
           });
 
           yield* generator;

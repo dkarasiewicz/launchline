@@ -5,7 +5,7 @@ const deploymentOptions = [
     icon: Cloud,
     title: "Launchline Cloud",
     description: "Managed hosting. Zero setup. Auto-updates.",
-    features: ["One-click integrations", "Managed infrastructure", "Automatic updates", "Priority support"],
+    features: ["Slack-first onboarding", "Managed infrastructure", "Guardrail policies", "Priority support"],
     highlight: true,
     badge: "Recommended",
   },
@@ -13,7 +13,7 @@ const deploymentOptions = [
     icon: Server,
     title: "Self-Hosted",
     description: "Run on your own infrastructure.",
-    features: ["Full control", "Your own data", "Custom LLM choice", "Community support"],
+    features: ["Full control", "Your own data", "Custom LLM choice", "Audit automation"],
     highlight: false,
     badge: "Open Source",
   },
@@ -21,7 +21,7 @@ const deploymentOptions = [
     icon: Building2,
     title: "Enterprise",
     description: "Private cloud with dedicated support.",
-    features: ["VPC deployment", "SSO / SAML", "SLA & compliance", "Custom integrations"],
+    features: ["VPC deployment", "SSO / SAML", "SLA & compliance", "Custom guardrails"],
     highlight: false,
     badge: "Coming soon",
   },
@@ -35,7 +35,7 @@ export function DeploymentSection() {
           <p className="text-xs font-medium text-muted-foreground/80 mb-4 uppercase tracking-widest">Deployment</p>
           <h2 className="text-2xl md:text-3xl font-medium tracking-tight text-foreground mb-4">Run it your way</h2>
           <p className="text-base text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Whether you want managed simplicity or full control, Launchline fits your team's needs.
+            Whether you want managed simplicity or full control, Linea adapts with transparent guardrails.
           </p>
         </div>
 

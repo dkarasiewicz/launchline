@@ -59,8 +59,10 @@ export class EventBusService {
         return null;
       }
 
-      const eventMessage: ClassConstructor<DomainEventType> =
-        EventTypeToDomainEventMap[parsedMessage.eventType as EventType];
+      const eventMessage: ClassConstructor<DomainEventType> | undefined =
+        EventTypeToDomainEventMap[
+          parsedMessage.eventType as keyof typeof EventTypeToDomainEventMap
+        ];
 
       if (!eventMessage) {
         this.logger.debug(`Invalid event type: ${parsedMessage.eventType}`);

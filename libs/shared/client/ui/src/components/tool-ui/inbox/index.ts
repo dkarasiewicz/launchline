@@ -2,4 +2,4 @@
  * Inbox Tool UI Index
  */
 
-export { GetInboxItemsToolUI } from "./inbox";
+export { GetInboxItemsToolUI, GetWorkspaceStatusToolUI } from './inbox';

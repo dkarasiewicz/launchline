@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { FileText } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
 import { Column } from '../data-table/types';
@@ -172,20 +172,19 @@ export const GenerateProjectUpdateToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full min-w-[400px] max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Generating update...' : 'Project Update'}
-            </CardTitle>
+        <CardContent className="pt-4 space-y-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Generating update...' : 'Project Update'}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {args.timeRange || 'Weekly'} update for {args.audience || 'team'} (
+              {args.format || 'slack'})
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {args.timeRange || 'Weekly'} update for {args.audience || 'team'} (
-            {args.format || 'slack'})
-          </p>
-        </CardHeader>
-
-        <CardContent className="pt-0 space-y-4">
           {isRunning && !showContent && (
             <ThinkingLoader message="Generating update..." />
           )}
