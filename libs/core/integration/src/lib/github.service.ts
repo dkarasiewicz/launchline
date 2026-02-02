@@ -3,6 +3,136 @@ import { ConfigService } from '@nestjs/config';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 
+interface GitHubOAuthResponse {
+  access_token?: string;
+  scope?: string;
+  token_type?: string;
+  error?: string;
+  error_description?: string;
+  error_uri?: string;
+}
+
+interface GitHubApiAccount {
+  id: number;
+  login: string;
+  type?: string;
+}
+
+interface GitHubApiUser {
+  id: number;
+  login: string;
+  name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+}
+
+interface GitHubApiRepository {
+  id: number;
+  name: string;
+  full_name: string;
+  owner?: { login?: string | null } | null;
+  description?: string | null;
+  language?: string | null;
+  default_branch: string;
+  private?: boolean;
+  html_url?: string | null;
+}
+
+interface GitHubApiPullRequest {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  merged?: boolean | null;
+  merged_at?: string | null;
+  draft?: boolean | null;
+  html_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  user?: { login?: string | null } | null;
+  base?: { ref?: string | null } | null;
+  body?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+  changed_files?: number | null;
+  labels?: Array<{ name?: string | null }>;
+  requested_reviewers?: Array<{ login?: string | null }>;
+}
+
+interface GitHubApiIssue {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  html_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  user?: { login?: string | null } | null;
+  body?: string | null;
+  labels?: Array<{ name?: string | null }>;
+  pull_request?: Record<string, unknown>;
+}
+
+interface GitHubApiCommit {
+  sha: string;
+  html_url?: string | null;
+  author?: { login?: string | null } | null;
+  commit?: {
+    message?: string | null;
+    author?: { name?: string | null; date?: string | null } | null;
+    committer?: { date?: string | null } | null;
+  } | null;
+  message?: string | null;
+  committer?: { date?: string | null } | null;
+}
+
+interface GitHubApiPullRequestFile {
+  filename: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string | null;
+}
+
+interface GitHubApiIssueComment {
+  user?: { login?: string | null } | null;
+  body?: string | null;
+}
+
+interface GitHubApiContributor {
+  id: number;
+  login: string;
+  contributions: number;
+}
+
+interface GitHubApiWebhook {
+  config?: { url?: string | null } | null;
+}
+
+interface GitHubApiInstallationRepositories {
+  repositories?: GitHubApiRepository[];
+}
+
+interface GitHubApiInstallation {
+  id: number;
+  account?: GitHubApiAccount | null;
+  repository_selection?: string | null;
+}
+
+interface GitHubApiInstallationAccessToken {
+  token: string;
+  expires_at?: string | null;
+}
+
+interface GitHubApiSearchIssues {
+  items?: GitHubApiIssue[];
+}
+
+interface GitHubApiCommitDetails extends GitHubApiCommit {
+  stats?: { additions?: number | null; deletions?: number | null } | null;
+  files?: GitHubApiPullRequestFile[];
+}
+
 export interface GitHubUserProfile {
   id: number;
   login: string;
@@ -158,8 +288,7 @@ export class GitHubService {
       throw new Error('Failed to exchange GitHub authorization code');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = await response.json();
+    const data = (await response.json()) as GitHubOAuthResponse;
 
     if (!data?.access_token) {
       this.logger.error({ data }, 'GitHub OAuth missing access token');
@@ -175,7 +304,7 @@ export class GitHubService {
 
   async getInstallation(installationId: string): Promise<GitHubInstallationSummary> {
     const jwtToken = this.buildAppJwt();
-    const data = await this.requestWithAuth(
+    const data = await this.requestWithAuth<GitHubApiInstallation>(
       `https://api.github.com/app/installations/${installationId}`,
       jwtToken,
       { authScheme: 'Bearer' },
@@ -196,7 +325,7 @@ export class GitHubService {
     installationId: string,
   ): Promise<{ token: string; expiresAt?: string }> {
     const jwtToken = this.buildAppJwt();
-    const data = await this.requestWithAuth(
+    const data = await this.requestWithAuth<GitHubApiInstallationAccessToken>(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       jwtToken,
       {
@@ -219,17 +348,20 @@ export class GitHubService {
     const url = new URL('https://api.github.com/installation/repositories');
     url.searchParams.set('per_page', String(limit));
 
-    const data = await this.request(url.toString(), accessToken);
-
-    const repositories = Array.isArray(data?.repositories)
-      ? data.repositories
-      : [];
+    const data = await this.request<GitHubApiInstallationRepositories>(
+      url.toString(),
+      accessToken,
+    );
+    const repositories = data.repositories ?? [];
 
     return repositories.map((repo) => this.mapRepository(repo));
   }
 
   async getViewer(accessToken: string): Promise<GitHubUserProfile> {
-    const data = await this.request('https://api.github.com/user', accessToken);
+    const data = await this.request<GitHubApiUser>(
+      'https://api.github.com/user',
+      accessToken,
+    );
 
     return {
       id: data.id,
@@ -254,7 +386,10 @@ export class GitHubService {
     url.searchParams.set('sort', 'updated');
     url.searchParams.set('affiliation', 'owner,collaborator,organization_member');
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiRepository[]>(
+      url.toString(),
+      accessToken,
+    );
 
     if (!Array.isArray(data)) {
       return [];
@@ -277,7 +412,10 @@ export class GitHubService {
     url.searchParams.set('state', options.state || 'open');
     url.searchParams.set('sort', 'updated');
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiPullRequest[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -296,7 +434,10 @@ export class GitHubService {
     );
     url.searchParams.set('per_page', String(Math.min(limit, 50)));
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiContributor[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -314,7 +455,7 @@ export class GitHubService {
     repo: string,
     number: number,
   ): Promise<GitHubPRDetails> {
-    const pr = await this.request(
+    const pr = await this.request<GitHubApiPullRequest>(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
       accessToken,
     );
@@ -354,7 +495,10 @@ export class GitHubService {
     );
     url.searchParams.set('per_page', '50');
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiPullRequestFile[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -379,7 +523,10 @@ export class GitHubService {
     );
     url.searchParams.set('per_page', '30');
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiCommit[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -400,7 +547,10 @@ export class GitHubService {
     url.searchParams.set('per_page', String(limit));
     url.searchParams.set('state', options.state || 'open');
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiIssue[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -416,7 +566,7 @@ export class GitHubService {
     repo: string,
     number: number,
   ): Promise<GitHubIssueDetails> {
-    const issue = await this.request(
+    const issue = await this.request<GitHubApiIssue>(
       `https://api.github.com/repos/${owner}/${repo}/issues/${number}`,
       accessToken,
     );
@@ -449,7 +599,10 @@ export class GitHubService {
     );
     url.searchParams.set('per_page', '10');
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiIssueComment[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -475,7 +628,10 @@ export class GitHubService {
       url.searchParams.set('sha', options.sha);
     }
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiCommit[]>(
+      url.toString(),
+      accessToken,
+    );
     if (!Array.isArray(data)) {
       return [];
     }
@@ -492,12 +648,15 @@ export class GitHubService {
     url.searchParams.set('q', query);
     url.searchParams.set('per_page', String(Math.min(limit, 50)));
 
-    const data = await this.request(url.toString(), accessToken);
+    const data = await this.request<GitHubApiSearchIssues>(
+      url.toString(),
+      accessToken,
+    );
     if (!data?.items || !Array.isArray(data.items)) {
       return [];
     }
 
-    return data.items.map((issue: any) => this.mapIssue(issue));
+    return data.items.map((issue) => this.mapIssue(issue));
   }
 
   async getCommitDetails(
@@ -506,7 +665,7 @@ export class GitHubService {
     repo: string,
     sha: string,
   ): Promise<GitHubCommitDetails> {
-    const commit = await this.request(
+    const commit = await this.request<GitHubApiCommitDetails>(
       `https://api.github.com/repos/${owner}/${repo}/commits/${sha}`,
       accessToken,
     );
@@ -516,12 +675,12 @@ export class GitHubService {
       additions: commit.stats?.additions,
       deletions: commit.stats?.deletions,
       files: Array.isArray(commit.files)
-        ? commit.files.map((file: any) => ({
+        ? commit.files.map((file) => ({
             filename: file.filename,
             additions: file.additions,
             deletions: file.deletions,
             changes: file.changes,
-            patch: file.patch,
+            patch: file.patch || undefined,
           }))
         : [],
     };
@@ -538,7 +697,7 @@ export class GitHubService {
     },
   ): Promise<void> {
     try {
-      const hooks = await this.request(
+      const hooks = await this.request<GitHubApiWebhook[]>(
         `https://api.github.com/repos/${owner}/${repo}/hooks`,
         accessToken,
       );
@@ -558,7 +717,7 @@ export class GitHubService {
       );
     }
 
-    await this.request(
+    await this.request<Record<string, unknown>>(
       `https://api.github.com/repos/${owner}/${repo}/hooks`,
       accessToken,
       {
@@ -706,18 +865,18 @@ export class GitHubService {
       .join('\n\n');
   }
 
-  private async request(
+  private async request<T>(
     url: string,
     accessToken: string,
     options: { method?: string; body?: Record<string, unknown> } = {},
-  ): Promise<any> {
-    return this.requestWithAuth(url, accessToken, {
+  ): Promise<T> {
+    return this.requestWithAuth<T>(url, accessToken, {
       method: options.method,
       body: options.body,
     });
   }
 
-  private async requestWithAuth(
+  private async requestWithAuth<T>(
     url: string,
     token: string,
     options: {
@@ -725,7 +884,7 @@ export class GitHubService {
       body?: Record<string, unknown>;
       authScheme?: 'Bearer' | 'token';
     } = {},
-  ): Promise<any> {
+  ): Promise<T> {
     const response = await fetch(url, {
       method: options.method || 'GET',
       headers: {
@@ -745,7 +904,7 @@ export class GitHubService {
       throw new Error(`GitHub API request failed (${response.status})`);
     }
 
-    return response.json();
+    return (await response.json()) as T;
   }
 
   private buildAppJwt(): string {
@@ -773,56 +932,56 @@ export class GitHubService {
     return token.startsWith('ghs_');
   }
 
-  private mapRepository(repo: any): GitHubRepository {
+  private mapRepository(repo: GitHubApiRepository): GitHubRepository {
     return {
       id: repo.id,
       name: repo.name,
       fullName: repo.full_name,
-      owner: repo.owner?.login,
+      owner: repo.owner?.login || '',
       description: repo.description || undefined,
       language: repo.language || undefined,
       defaultBranch: repo.default_branch,
       private: repo.private,
-      htmlUrl: repo.html_url,
+      htmlUrl: repo.html_url || undefined,
     };
   }
 
-  private mapPullRequest(pr: any): GitHubPullRequestSummary {
+  private mapPullRequest(pr: GitHubApiPullRequest): GitHubPullRequestSummary {
     return {
       id: pr.id,
       number: pr.number,
       title: pr.title,
       state: pr.state,
       merged: pr.merged || pr.merged_at != null,
-      draft: pr.draft,
-      htmlUrl: pr.html_url,
-      createdAt: pr.created_at,
-      updatedAt: pr.updated_at,
-      author: pr.user?.login,
-      baseBranch: pr.base?.ref,
+      draft: pr.draft || undefined,
+      htmlUrl: pr.html_url || undefined,
+      createdAt: pr.created_at || undefined,
+      updatedAt: pr.updated_at || undefined,
+      author: pr.user?.login || undefined,
+      baseBranch: pr.base?.ref || undefined,
     };
   }
 
-  private mapIssue(issue: any): GitHubIssueSummary {
+  private mapIssue(issue: GitHubApiIssue): GitHubIssueSummary {
     return {
       id: issue.id,
       number: issue.number,
       title: issue.title,
       state: issue.state,
-      htmlUrl: issue.html_url,
-      createdAt: issue.created_at,
-      updatedAt: issue.updated_at,
-      author: issue.user?.login,
+      htmlUrl: issue.html_url || undefined,
+      createdAt: issue.created_at || undefined,
+      updatedAt: issue.updated_at || undefined,
+      author: issue.user?.login || undefined,
     };
   }
 
-  private mapCommit(commit: any): GitHubCommitSummary {
+  private mapCommit(commit: GitHubApiCommit): GitHubCommitSummary {
     return {
       sha: commit.sha,
       message: commit.commit?.message || commit.message || '',
-      author: commit.commit?.author?.name || commit.author?.login,
-      htmlUrl: commit.html_url,
-      date: commit.commit?.author?.date || commit.committer?.date,
+      author: commit.commit?.author?.name || commit.author?.login || undefined,
+      htmlUrl: commit.html_url || undefined,
+      date: commit.commit?.author?.date || commit.committer?.date || undefined,
     };
   }
 
