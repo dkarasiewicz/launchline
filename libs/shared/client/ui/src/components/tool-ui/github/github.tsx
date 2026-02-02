@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { AlertTriangle, Github, Loader2 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
@@ -86,17 +86,15 @@ function parseResult(result: unknown): GitHubToolResult | null {
 
 function GitHubHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <CardHeader className="pb-3 bg-slate-500/5">
-      <div className="flex items-center gap-2">
-        <Github className="h-4 w-4 text-slate-600" />
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {subtitle && (
-          <Badge variant="secondary" className="ml-auto text-xs">
-            {subtitle}
-          </Badge>
-        )}
-      </div>
-    </CardHeader>
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <Github className="h-4 w-4 text-slate-600" />
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {subtitle && (
+        <Badge variant="secondary" className="ml-auto text-xs">
+          {subtitle}
+        </Badge>
+      )}
+    </div>
   );
 }
 
@@ -139,8 +137,8 @@ export const GetGitHubPullRequestsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <GitHubHeader title="GitHub PRs" subtitle={args.repo} />
         <CardContent className="pt-4">
+          <GitHubHeader title="GitHub PRs" subtitle={args.repo} />
           {isRunning ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -214,8 +212,8 @@ export const GetGitHubPullRequestDetailsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <GitHubHeader title="PR Details" subtitle={args.repo} />
         <CardContent className="pt-4 space-y-4">
+          <GitHubHeader title="PR Details" subtitle={args.repo} />
           {isRunning ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -329,8 +327,8 @@ export const GetGitHubIssuesToolUI = makeAssistantToolUI<IssuesArgs, unknown>({
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <GitHubHeader title="GitHub Issues" subtitle={args.repo} />
         <CardContent className="pt-4">
+          <GitHubHeader title="GitHub Issues" subtitle={args.repo} />
           {isRunning ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -405,8 +403,8 @@ export const SearchGitHubIssuesToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <GitHubHeader title="Issue Search" subtitle={args.repo || 'All repos'} />
         <CardContent className="pt-4">
+          <GitHubHeader title="Issue Search" subtitle={args.repo || 'All repos'} />
           {isRunning ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -476,8 +474,8 @@ export const GetGitHubCommitsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <GitHubHeader title="Recent Commits" subtitle={args.repo} />
         <CardContent className="pt-4">
+          <GitHubHeader title="Recent Commits" subtitle={args.repo} />
           {isRunning ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />

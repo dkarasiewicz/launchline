@@ -1,10 +1,8 @@
-import { Inject, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import type { ReactAgent } from 'langchain';
-import { LINEA_AGENT } from '../tokens';
 import { LineaFacade } from '../linea.facade';
-import { AgentPromptService } from '../services/agent-prompt.service';
+import { AgentFactory } from '../services/agent.factory';
 import { HeartbeatSettingsService } from '../services/heartbeat-settings.service';
 import {
   LINEA_JOB_HEARTBEAT,
@@ -42,10 +40,8 @@ export class LineaJobsProcessor extends WorkerHost {
   private readonly logger = new Logger(LineaJobsProcessor.name);
 
   constructor(
-    @Inject(LINEA_AGENT)
-    private readonly agent: ReactAgent,
+    private readonly agentFactory: AgentFactory,
     private readonly lineaFacade: LineaFacade,
-    private readonly agentPromptService: AgentPromptService,
     private readonly heartbeatSettingsService: HeartbeatSettingsService,
     private readonly integrationFacade: IntegrationFacade,
     private readonly slackService: SlackService,
@@ -75,9 +71,8 @@ export class LineaJobsProcessor extends WorkerHost {
     const { workspaceId, userId } = job.data;
     const threadId = `heartbeat-${workspaceId}`;
     const now = new Date();
-    const settings = await this.heartbeatSettingsService.getSettings(
-      workspaceId,
-    );
+    const settings =
+      await this.heartbeatSettingsService.getSettings(workspaceId);
 
     if (!settings.enabled) {
       this.logger.debug(
@@ -88,23 +83,9 @@ export class LineaJobsProcessor extends WorkerHost {
     }
 
     const inQuietHours = this.isInQuietHours(settings, now);
-    const workspacePrompt =
-      await this.agentPromptService.getWorkspacePrompt(workspaceId);
-    const hasHistory = await this.hasThreadHistory(
-      threadId,
-      workspaceId,
-      userId,
-    );
+    const agent = await this.agentFactory.getAgentForWorkspace(workspaceId);
 
     const messages: Array<{ type: string; content: string }> = [
-      ...(workspacePrompt && !hasHistory
-        ? [
-            {
-              type: 'system',
-              content: `Workspace instructions:\n${workspacePrompt}`,
-            },
-          ]
-        : []),
       {
         type: 'system',
         content: this.buildHeartbeatPrompt(
@@ -118,9 +99,7 @@ export class LineaJobsProcessor extends WorkerHost {
       },
     ];
 
-    const result = (await this.agent.invoke(
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
+    const result = (await agent.invoke(
       { messages },
       {
         configurable: {
@@ -233,23 +212,9 @@ export class LineaJobsProcessor extends WorkerHost {
       replyToThreadId,
     } = job.data;
     const threadId = replyToThreadId || `scheduled-task-${taskId}`;
-    const workspacePrompt =
-      await this.agentPromptService.getWorkspacePrompt(workspaceId);
-    const hasHistory = await this.hasThreadHistory(
-      threadId,
-      workspaceId,
-      userId,
-    );
+    const agent = await this.agentFactory.getAgentForWorkspace(workspaceId);
 
     const messages: Array<{ type: string; content: string }> = [
-      ...(workspacePrompt && !hasHistory
-        ? [
-            {
-              type: 'system',
-              content: `Workspace instructions:\n${workspacePrompt}`,
-            },
-          ]
-        : []),
       { type: 'system', content: this.buildScheduledTaskPrompt(mode) },
       {
         type: 'human',
@@ -257,9 +222,7 @@ export class LineaJobsProcessor extends WorkerHost {
       },
     ];
 
-    const result = (await this.agent.invoke(
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
+    const result = (await agent.invoke(
       { messages },
       {
         configurable: {
@@ -296,10 +259,7 @@ export class LineaJobsProcessor extends WorkerHost {
     });
   }
 
-  private buildHeartbeatPrompt(
-    lastRunAt?: string,
-    timezone: string = 'UTC',
-  ): string {
+  private buildHeartbeatPrompt(lastRunAt?: string, timezone = 'UTC'): string {
     const lastRunLine = lastRunAt
       ? `Last heartbeat ran at ${lastRunAt} (${timezone}). Focus on changes since then.`
       : 'No previous heartbeat recorded. Build a baseline snapshot.';
@@ -532,23 +492,5 @@ Guardrails:
     await this.slackService.postMessage(token, channelId, lines);
   }
 
-  private async hasThreadHistory(
-    threadId: string,
-    workspaceId: string,
-    userId: string,
-  ): Promise<boolean> {
-    try {
-      const state = await this.agent.graph.getState({
-        configurable: {
-          thread_id: threadId,
-          workspaceId,
-          userId,
-        },
-      });
-      const messages = (state?.values as { messages?: unknown[] })?.messages;
-      return Array.isArray(messages) && messages.length > 0;
-    } catch {
-      return false;
-    }
-  }
+  // No thread history check needed; workspace prompt is embedded in agent.
 }

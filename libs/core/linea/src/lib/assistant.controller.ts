@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Inject,
   Logger,
   Post,
   Query,
@@ -13,8 +12,7 @@ import {
 } from '@nestjs/common';
 import { RunsInvokePayload } from '@langchain/langgraph-sdk';
 
-import { LINEA_AGENT } from './tokens';
-import { ReactAgent } from 'langchain';
+import { AgentFactory } from './services/agent.factory';
 import {
   AuthenticatedUser,
   AuthenticatedWorkspace,
@@ -28,6 +26,7 @@ import { randomUUID } from 'crypto';
 import { StateSnapshot } from '@langchain/langgraph';
 import { AgentPromptService } from './services';
 import type { StoredThread } from './types';
+import { DeepAgent } from 'deepagents';
 
 function buildInboxContextMessage(thread: StoredThread): LangChainMessage {
   const lines: string[] = [
@@ -80,15 +79,8 @@ function buildInboxContextMessage(thread: StoredThread): LangChainMessage {
   };
 }
 
-function buildWorkspacePromptMessage(prompt: string): LangChainMessage {
-  return {
-    type: 'system',
-    content: `Workspace instructions:\n${prompt}`,
-  };
-}
-
 async function hasThreadHistory(
-  agent: ReactAgent,
+  agent: DeepAgent,
   threadId: string,
   workspaceId: string,
   userId: string,
@@ -113,8 +105,7 @@ export class AssistantController {
   private readonly logger = new Logger(AssistantController.name);
 
   constructor(
-    @Inject(LINEA_AGENT)
-    private readonly agent: ReactAgent,
+    private readonly agentFactory: AgentFactory,
     private readonly assistantService: AssistantService,
     private readonly agentPromptService: AgentPromptService,
   ) {}
@@ -155,11 +146,12 @@ export class AssistantController {
       );
     }
 
+    const agent = await this.agentFactory.getAgentForWorkspace(workspace.id);
     let enrichedMessages = messages;
 
     const thread = await this.assistantService.getThread(currentThreadId);
     const hasHistory = await hasThreadHistory(
-      this.agent,
+      agent,
       currentThreadId,
       workspace.id,
       currentUser.userId,
@@ -182,28 +174,7 @@ export class AssistantController {
       }
     }
 
-    const workspacePrompt = await this.agentPromptService.getWorkspacePrompt(
-      workspace.id,
-    );
-    if (workspacePrompt && !hasHistory) {
-      const alreadyInjected = enrichedMessages.some(
-        (message) =>
-          message.type === 'system' &&
-          typeof message.content === 'string' &&
-          message.content.includes('Workspace instructions:'),
-      );
-
-      if (!alreadyInjected) {
-        enrichedMessages = [
-          buildWorkspacePromptMessage(workspacePrompt),
-          ...enrichedMessages,
-        ];
-      }
-    }
-
-    const agentStream = await this.agent.stream(
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
+    const agentStream = await agent.stream(
       {
         messages: enrichedMessages,
       },
@@ -214,6 +185,9 @@ export class AssistantController {
           userId: currentUser.userId,
         },
         streamMode: ['messages', 'updates'],
+        // subgraphs works but for some reason not typed?
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-expect-error
         subgraphs: true,
       },
     );
@@ -298,7 +272,8 @@ export class AssistantController {
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
     @Query('threadId') threadId: string,
   ): Promise<StateSnapshot> {
-    return this.agent.graph.getState({
+    const agent = await this.agentFactory.getAgentForWorkspace(workspace.id);
+    return agent.graph.getState({
       configurable: {
         thread_id: threadId,
         workspaceId: workspace.id,

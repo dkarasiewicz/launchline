@@ -27,7 +27,6 @@ import {
   HeartbeatSettingsService,
 } from './services';
 import {
-  LINEA_AGENT,
   LINEA_TOOLS,
   LINEA_SUBAGENTS,
   LINEA_STORE,
@@ -83,12 +82,6 @@ import { LineaJobsProcessor } from './jobs/linea-jobs.processor';
       provide: LINEA_SUBAGENTS,
       useFactory: (factory: SubagentsFactory) => factory.createAllSubagents(),
       inject: [SubagentsFactory],
-    },
-    // Agent token (from AgentFactory)
-    {
-      provide: LINEA_AGENT,
-      useFactory: (factory: AgentFactory) => factory.getAgent(),
-      inject: [AgentFactory],
     },
     // Application services
     AssistantService,

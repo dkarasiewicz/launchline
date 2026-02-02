@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Loader2, Mail, CalendarDays, AlertTriangle } from 'lucide-react';
 import { ToolMarkdown } from '../shared';
@@ -42,23 +42,23 @@ export const GetLatestEmailsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-rose-500/5">
-          <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4 text-rose-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Checking inbox...' : 'Latest Emails'}
-            </CardTitle>
-            <Badge variant="secondary" className="ml-auto text-xs">
-              Gmail
-            </Badge>
-          </div>
-          {args?.query && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Query: &quot;{args.query}&quot;
-            </p>
-          )}
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-rose-500" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Checking inbox...' : 'Latest Emails'}
+              </p>
+              <Badge variant="secondary" className="ml-auto text-xs">
+                Gmail
+              </Badge>
+            </div>
+            {args?.query && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Query: &quot;{args.query}&quot;
+              </p>
+            )}
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Fetching latest emails..." />
           ) : (
@@ -82,15 +82,13 @@ export const ReplyToEmailToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-rose-500/5">
-          <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4 text-rose-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Sending reply...' : 'Email reply'}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Mail className="h-4 w-4 text-rose-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Sending reply...' : 'Email reply'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Sending reply..." />
           ) : isError ? (
@@ -119,18 +117,16 @@ export const GetCalendarEventsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-blue-500/5">
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-blue-500" />
-            <CardTitle className="text-sm font-medium">
+            <p className="text-sm font-medium text-foreground">
               {isRunning ? 'Loading events...' : 'Calendar events'}
-            </CardTitle>
+            </p>
             <Badge variant="secondary" className="ml-auto text-xs">
               Google Calendar
             </Badge>
           </div>
-        </CardHeader>
-        <CardContent className="pt-4">
           {isRunning ? (
             <ThinkingLoader message="Fetching calendar events..." />
           ) : (
@@ -154,15 +150,13 @@ export const ScheduleCalendarEventToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-blue-500/5">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-blue-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Scheduling event...' : 'Calendar event scheduled'}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-blue-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Scheduling event...' : 'Calendar event scheduled'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Scheduling calendar event..." />
           ) : isError ? (

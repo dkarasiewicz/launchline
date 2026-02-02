@@ -84,10 +84,19 @@ Output:
 - Prefer fragments over paragraphs where possible.
 - When listing items, include IDs and owners.`;
 
-export function buildLineaSystemPrompt(skillSummaries?: string): string {
-  if (!skillSummaries || !skillSummaries.trim()) {
-    return LINEA_SYSTEM_PROMPT;
+export function buildLineaSystemPrompt(
+  skillSummaries?: string,
+  workspacePrompt?: string,
+): string {
+  const sections = [LINEA_SYSTEM_PROMPT];
+
+  if (workspacePrompt && workspacePrompt.trim()) {
+    sections.push(`Workspace instructions:\n${workspacePrompt.trim()}`);
   }
 
-  return `${LINEA_SYSTEM_PROMPT}\n\n${skillSummaries.trim()}`;
+  if (skillSummaries && skillSummaries.trim()) {
+    sections.push(skillSummaries.trim());
+  }
+
+  return sections.join('\n\n');
 }

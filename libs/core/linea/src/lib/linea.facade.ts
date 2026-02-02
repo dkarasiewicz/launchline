@@ -1,7 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { ReactAgent } from 'langchain';
-import { LINEA_AGENT } from './tokens';
+import { Injectable, Logger } from '@nestjs/common';
 import { MemoryService, GraphsFactory } from './services';
+import { AgentFactory } from './services/agent.factory';
 import { AssistantService } from './assistant.service';
 import type {
   GraphContext,
@@ -21,8 +20,7 @@ export class LineaFacade {
   private readonly logger = new Logger(LineaFacade.name);
 
   constructor(
-    @Inject(LINEA_AGENT)
-    private readonly agent: ReactAgent,
+    private readonly agentFactory: AgentFactory,
     private readonly memoryService: MemoryService,
     private readonly graphsFactory: GraphsFactory,
     private readonly assistantService: AssistantService,
@@ -294,7 +292,8 @@ export class LineaFacade {
   }
 
   async getThreadState(threadId: string) {
-    return this.agent.getState({
+    const agent = await this.agentFactory.getAgentForWorkspace('default');
+    return agent.getState({
       configurable: { thread_id: threadId },
     });
   }

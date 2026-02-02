@@ -20,8 +20,6 @@ import {
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
   CardFooter,
 } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -215,15 +213,15 @@ export function Plan({
 
   return (
     <Card className={cn('w-full max-w-xl overflow-hidden', className)}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-4">
+      <CardContent className="pt-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <div className="text-base font-semibold flex items-center gap-2 text-foreground">
               {progress.isAllComplete && (
                 <PartyPopper className="h-5 w-5 text-amber-500" />
               )}
               {title}
-            </CardTitle>
+            </div>
             {description && (
               <p className="mt-1 text-sm text-muted-foreground">
                 {description}
@@ -234,7 +232,7 @@ export function Plan({
 
         {/* Progress bar */}
         {showProgress && (
-          <div className="mt-4 space-y-2">
+          <div className="mb-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">
                 {progress.completed} of {progress.total} complete
@@ -244,9 +242,7 @@ export function Plan({
             <Progress value={progress.percentage} className="h-2" />
           </div>
         )}
-      </CardHeader>
 
-      <CardContent className="pt-0">
         <div className="divide-y divide-border">
           {visibleTodos.map((todo) => (
             <TodoItem

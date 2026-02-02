@@ -7,6 +7,7 @@ import { LINEA_MODEL, LINEA_STORE, LINEA_CHECKPOINTER } from '../tokens';
 import { ToolsFactory } from './tools.factory';
 import { SubagentsFactory } from './subagents.factory';
 import { SkillsFactory } from './skills.factory';
+import { AgentPromptService } from './agent-prompt.service';
 import { buildLineaSystemPrompt } from '../prompts';
 
 export interface LineaAgentState {
@@ -21,6 +22,10 @@ export interface LineaAgentState {
 export class AgentFactory implements OnModuleInit {
   private readonly logger = new Logger(AgentFactory.name);
   agent: DeepAgent | null = null;
+  private readonly workspaceAgents = new Map<
+    string,
+    { version: number; agent: DeepAgent }
+  >();
 
   constructor(
     @Inject(LINEA_MODEL)
@@ -32,6 +37,7 @@ export class AgentFactory implements OnModuleInit {
     private readonly toolsFactory: ToolsFactory,
     private readonly subagentsFactory: SubagentsFactory,
     private readonly skillsFactory: SkillsFactory,
+    private readonly agentPromptService: AgentPromptService,
   ) {}
 
   async onModuleInit() {
@@ -83,6 +89,21 @@ export class AgentFactory implements OnModuleInit {
     return this.agent;
   }
 
+  async getAgentForWorkspace(workspaceId: string): Promise<DeepAgent> {
+    const record =
+      await this.agentPromptService.getWorkspacePromptRecord(workspaceId);
+    const version = record?.version ?? 0;
+    const cached = this.workspaceAgents.get(workspaceId);
+
+    if (cached && cached.version === version) {
+      return cached.agent;
+    }
+
+    const agent = this.createAgent(record?.prompt);
+    this.workspaceAgents.set(workspaceId, { version, agent });
+    return agent;
+  }
+
   /**
    * Get skill files for agent invocation
    * These files are passed to the agent's invoke method
@@ -101,7 +122,7 @@ export class AgentFactory implements OnModuleInit {
     return this.skillsFactory.getSkillSummaries();
   }
 
-  createAgent(): DeepAgent {
+  createAgent(workspacePrompt?: string): DeepAgent {
     const tools = this.toolsFactory.createAllTools();
     const subagents = this.subagentsFactory.createAllSubagents();
     const skillPaths = this.skillsFactory.getSkillPaths();
@@ -109,6 +130,7 @@ export class AgentFactory implements OnModuleInit {
     // Enhance system prompt with skill summaries
     const enhancedSystemPrompt = buildLineaSystemPrompt(
       this.skillsFactory.getSkillSummaries(),
+      workspacePrompt,
     );
 
     this.logger.log(

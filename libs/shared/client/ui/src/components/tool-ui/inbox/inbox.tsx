@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { Inbox, Activity } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
 import { Column } from '../data-table/types';
@@ -151,30 +151,29 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full min-w-[400px] max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Inbox className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Loading inbox...' : `Found ${items.length} items`}
-            </CardTitle>
-          </div>
-          {(args.priority || args.type) && (
-            <div className="flex gap-2 mt-1">
-              {args.priority && (
-                <Badge variant="secondary" className="text-xs">
-                  {args.priority} priority
-                </Badge>
-              )}
-              {args.type && (
-                <Badge variant="outline" className="text-xs">
-                  {args.type.replace(/_/g, ' ')}
-                </Badge>
-              )}
+        <CardContent className="pt-4">
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Loading inbox...' : `Found ${items.length} items`}
+              </p>
             </div>
-          )}
-        </CardHeader>
-
-        <CardContent className="pt-0">
+            {(args.priority || args.type) && (
+              <div className="flex gap-2 mt-1">
+                {args.priority && (
+                  <Badge variant="secondary" className="text-xs">
+                    {args.priority} priority
+                  </Badge>
+                )}
+                {args.type && (
+                  <Badge variant="outline" className="text-xs">
+                    {args.type.replace(/_/g, ' ')}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
           {isRunning && !showContent && (
             <ThinkingLoader message="Fetching inbox items..." />
           )}
@@ -237,20 +236,18 @@ export const GetWorkspaceStatusToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-lg overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-indigo-500/5">
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
             <Activity className="h-4 w-4 text-indigo-500" />
-            <CardTitle className="text-sm font-medium">
+            <p className="text-sm font-medium text-foreground">
               {isRunning ? 'Loading status...' : 'Workspace Status'}
-            </CardTitle>
+            </p>
             {args.includeMetrics && (
               <Badge variant="secondary" className="text-xs ml-auto">
                 + Metrics
               </Badge>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="pt-4">
           {isRunning && !showContent ? (
             <ThinkingLoader message="Gathering workspace status..." />
           ) : (

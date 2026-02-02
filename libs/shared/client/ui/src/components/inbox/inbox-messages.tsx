@@ -43,24 +43,30 @@ export function InboxUserMessage() {
  */
 export function InboxAssistantMessage() {
   return (
-    <MessagePrimitive.Root
-      className="aui-assistant-message-root fade-in slide-in-from-bottom-1 relative mx-auto w-full animate-in py-3 duration-150"
-      data-role="assistant"
+    <AssistantIf
+      condition={({ message }) =>
+        message.parts.length > 0 || message.status?.type !== 'running'
+      }
     >
-      <div className="flex gap-3 group">
-        <div className="aui-assistant-message-avatar w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <LogoIcon className="w-4 h-4 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="aui-assistant-message-content wrap-break-word rounded-2xl rounded-tl-sm bg-card border border-border/50 px-4 py-2.5 shadow-sm text-foreground leading-relaxed">
-            <MessagePrimitive.Parts />
+      <MessagePrimitive.Root
+        className="aui-assistant-message-root fade-in slide-in-from-bottom-1 relative mx-auto w-full animate-in py-3 duration-150"
+        data-role="assistant"
+      >
+        <div className="flex gap-3 group">
+          <div className="aui-assistant-message-avatar w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <LogoIcon className="w-4 h-4 text-primary" />
           </div>
-          <div className="aui-assistant-message-footer mt-1 flex">
-            <InboxAssistantActionBar />
+          <div className="flex-1 min-w-0">
+            <div className="aui-assistant-message-content wrap-break-word rounded-2xl rounded-tl-sm bg-card border border-border/50 px-4 py-2.5 shadow-sm text-foreground leading-relaxed">
+              <MessagePrimitive.Parts />
+            </div>
+            <div className="aui-assistant-message-footer mt-1 flex">
+              <InboxAssistantActionBar />
+            </div>
           </div>
         </div>
-      </div>
-    </MessagePrimitive.Root>
+      </MessagePrimitive.Root>
+    </AssistantIf>
   );
 }
 
@@ -77,9 +83,12 @@ export function InboxAssistantThinking({
         const lastRole = last?.role;
         const lastStatus =
           lastRole === 'assistant' ? last?.status?.type : undefined;
+        const lastParts = last?.parts ?? [];
+        const lastHasContent = lastParts.length > 0;
         return (
           thread.isRunning &&
-          (lastRole !== 'assistant' || lastStatus === 'running')
+          (lastRole !== 'assistant' ||
+            (lastStatus === 'running' && !lastHasContent))
         );
       }}
     >

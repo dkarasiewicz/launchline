@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Terminal, Loader2 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
@@ -59,20 +59,18 @@ export const RunSandboxCommandToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-slate-500/5">
+        <CardContent className="pt-4 space-y-4">
           <div className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-slate-500" />
-            <CardTitle className="text-sm font-medium">
+            <p className="text-sm font-medium text-foreground">
               {isRunning ? 'Running sandbox command...' : 'Sandbox Command'}
-            </CardTitle>
+            </p>
             {args.image && (
               <Badge variant="secondary" className="ml-auto text-xs">
                 {args.image}
               </Badge>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="pt-4 space-y-4">
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
             <p className="text-xs text-muted-foreground mb-2">Command</p>
             <pre className="text-xs font-mono whitespace-pre-wrap text-foreground">

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   DomainEventType,
   EVENT_BUS_EXCHANGE,
@@ -17,14 +17,13 @@ import {
   RabbitSubscribe,
   MessageHandlerErrorBehavior,
 } from '@golevelup/nestjs-rabbitmq';
-import { AgentPromptService, OnboardingGraphsFactory } from './services';
+import { OnboardingGraphsFactory } from './services';
 import { LineaFacade } from './linea.facade';
 import { randomUUID } from 'crypto';
 import { SourceType } from './types';
-import type { ReactAgent } from 'langchain';
-import { LINEA_AGENT } from './tokens';
 import { AssistantService } from './assistant.service';
 import { LineaJobsService } from './jobs/linea-jobs.service';
+import { AgentFactory } from './services/agent.factory';
 
 const LINEA_DOMAIN = 'LINEA';
 
@@ -40,9 +39,7 @@ export class LineaQueue {
     private readonly slackService: SlackService,
     private readonly assistantService: AssistantService,
     private readonly lineaJobsService: LineaJobsService,
-    private readonly agentPromptService: AgentPromptService,
-    @Inject(LINEA_AGENT)
-    private readonly agent: ReactAgent,
+    private readonly agentFactory: AgentFactory,
   ) {}
 
   @Public()
@@ -652,30 +649,15 @@ export class LineaQueue {
       return;
     }
 
-    const workspacePrompt = await this.agentPromptService.getWorkspacePrompt(
+    const agent = await this.agentFactory.getAgentForWorkspace(
       payload.workspaceId,
-    );
-    const hasHistory = await this.hasThreadHistory(
-      threadId,
-      payload.workspaceId,
-      userId,
     );
 
     const messages: Array<{ type: string; content: string }> = [
-      ...(workspacePrompt && !hasHistory
-        ? [
-            {
-              type: 'system',
-              content: `Workspace instructions:\n${workspacePrompt}`,
-            },
-          ]
-        : []),
       { type: 'human', content: cleanedText },
     ];
 
-    const result = (await this.agent.invoke(
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
+    const result = (await agent.invoke(
       { messages },
       {
         configurable: {
@@ -720,23 +702,5 @@ export class LineaQueue {
     );
   }
 
-  private async hasThreadHistory(
-    threadId: string,
-    workspaceId: string,
-    userId: string,
-  ): Promise<boolean> {
-    try {
-      const state = await this.agent.graph.getState({
-        configurable: {
-          thread_id: threadId,
-          workspaceId,
-          userId,
-        },
-      });
-      const messages = (state?.values as { messages?: unknown[] })?.messages;
-      return Array.isArray(messages) && messages.length > 0;
-    } catch {
-      return false;
-    }
-  }
+  // No thread history check needed; workspace prompt is embedded in agent.
 }

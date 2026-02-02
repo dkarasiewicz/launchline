@@ -16,7 +16,7 @@ import {
   Save,
   CheckCircle,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { DataTable, DataTableErrorBoundary } from '../data-table/data-table';
 import { Column } from '../data-table/types';
@@ -189,41 +189,40 @@ export const SearchMemoriesToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full min-w-[400px] max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning
-                ? 'Searching memories...'
-                : hasError
-                  ? 'Memory search failed'
-                  : `Found ${memories.length} memories`}
-            </CardTitle>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Query: &quot;{args.query}&quot;
-            {args.namespace && (
-              <span className="ml-2">in {args.namespace}</span>
-            )}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Badge variant="outline" className="text-[11px]">
-              Scope: {args.namespace ?? 'all'}
-            </Badge>
-            {typeof args.limit === 'number' && (
+        <CardContent className="pt-4">
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning
+                  ? 'Searching memories...'
+                  : hasError
+                    ? 'Memory search failed'
+                    : `Found ${memories.length} memories`}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Query: &quot;{args.query}&quot;
+              {args.namespace && (
+                <span className="ml-2">in {args.namespace}</span>
+              )}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
               <Badge variant="outline" className="text-[11px]">
-                Limit: {args.limit}
+                Scope: {args.namespace ?? 'all'}
               </Badge>
-            )}
-            {!isRunning && !hasError && (
-              <Badge variant="secondary" className="text-[11px]">
-                Results: {memories.length}
-              </Badge>
-            )}
+              {typeof args.limit === 'number' && (
+                <Badge variant="outline" className="text-[11px]">
+                  Limit: {args.limit}
+                </Badge>
+              )}
+              {!isRunning && !hasError && (
+                <Badge variant="secondary" className="text-[11px]">
+                  Results: {memories.length}
+                </Badge>
+              )}
+            </div>
           </div>
-        </CardHeader>
-
-        <CardContent className="pt-0">
           {isRunning && !showContent && (
             <ThinkingLoader message="Searching memories..." />
           )}
@@ -292,23 +291,21 @@ export const SaveMemoryToolUI = makeAssistantToolUI<SaveMemoryArgs, string>({
 
     return (
       <Card className="w-full max-w-md overflow-hidden my-2">
-        <CardHeader className={cn('pb-3', isSuccess && 'bg-green-500/10')}>
+        <CardContent className="pt-4 space-y-3">
           <div className="flex items-center gap-2">
             {isSuccess ? (
               <CheckCircle className="h-4 w-4 text-green-500" />
             ) : (
               <Save className="h-4 w-4 text-primary" />
             )}
-            <CardTitle className="text-sm font-medium">
+            <p className="text-sm font-medium text-foreground">
               {isRunning
                 ? 'Saving memory...'
                 : isSuccess
                   ? 'Memory Saved'
                   : 'Save Memory'}
-            </CardTitle>
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="pt-4 space-y-3">
           <div className="flex gap-2">
             <Badge variant="outline">{args.namespace}</Badge>
             <Badge variant="secondary">{args.category}</Badge>
@@ -352,15 +349,13 @@ export const GetBlockersToolUI = makeAssistantToolUI<GetBlockersArgs, string>({
 
     return (
       <Card className="w-full max-w-lg overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-rose-500/5">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-rose-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Finding blockers...' : 'Active Blockers'}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Finding blockers...' : 'Active Blockers'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Searching for blockers..." />
           ) : isEmpty ? (
@@ -394,15 +389,13 @@ export const GetDecisionsToolUI = makeAssistantToolUI<GetDecisionsArgs, string>(
 
       return (
         <Card className="w-full max-w-lg overflow-hidden my-2">
-          <CardHeader className="pb-3 bg-emerald-500/5">
-            <div className="flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-emerald-500" />
-              <CardTitle className="text-sm font-medium">
-                {isRunning ? 'Finding decisions...' : 'Recent Decisions'}
-              </CardTitle>
-            </div>
-          </CardHeader>
           <CardContent className="pt-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-emerald-500" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Finding decisions...' : 'Recent Decisions'}
+              </p>
+            </div>
             {isRunning ? (
               <ThinkingLoader message="Searching for decisions..." />
             ) : isEmpty ? (
@@ -438,15 +431,13 @@ export const ResolveIdentityToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-md overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-blue-500/5">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-blue-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Resolving identity...' : `Identity: ${args.name}`}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <User className="h-4 w-4 text-blue-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Resolving identity...' : `Identity: ${args.name}`}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message={`Looking up ${args.name}...`} />
           ) : notFound ? (

@@ -12,8 +12,6 @@ import { makeAssistantToolUI } from '@assistant-ui/react';
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
   CardFooter,
 } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -159,14 +157,14 @@ export const UpdateLinearTicketToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-md overflow-hidden">
-        <CardHeader
-          className={cn(
-            'pb-3',
-            wasApproved && 'bg-status-success-muted',
-            wasRejected && 'bg-status-error-muted',
-          )}
-        >
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4 space-y-3">
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-md px-2 py-2',
+              wasApproved && 'bg-status-success-muted',
+              wasRejected && 'bg-status-error-muted',
+            )}
+          >
             {wasApproved && (
               <CheckCircle className="h-5 w-5 text-status-success" />
             )}
@@ -174,17 +172,14 @@ export const UpdateLinearTicketToolUI = makeAssistantToolUI<
             {!wasApproved && !wasRejected && (
               <AlertTriangle className="h-5 w-5 text-status-warning" />
             )}
-            <CardTitle className="text-base font-semibold">
+            <p className="text-base font-semibold text-foreground">
               {wasApproved
                 ? 'Ticket Updated'
                 : wasRejected
                   ? 'Update Rejected'
                   : 'Update Linear Ticket'}
-            </CardTitle>
+            </p>
           </div>
-        </CardHeader>
-
-        <CardContent className="pt-4 space-y-3">
           {/* Ticket ID */}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Ticket</span>
@@ -338,14 +333,14 @@ export const SendSlackMessageToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-md overflow-hidden">
-        <CardHeader
-          className={cn(
-            'pb-3',
-            wasApproved && 'bg-status-success-muted',
-            wasRejected && 'bg-status-error-muted',
-          )}
-        >
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4 space-y-3">
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-md px-2 py-2',
+              wasApproved && 'bg-status-success-muted',
+              wasRejected && 'bg-status-error-muted',
+            )}
+          >
             {wasApproved && (
               <CheckCircle className="h-5 w-5 text-status-success" />
             )}
@@ -353,17 +348,14 @@ export const SendSlackMessageToolUI = makeAssistantToolUI<
             {!wasApproved && !wasRejected && (
               <MessageSquare className="h-5 w-5 text-status-info" />
             )}
-            <CardTitle className="text-base font-semibold">
+            <p className="text-base font-semibold text-foreground">
               {wasApproved
                 ? 'Message Sent'
                 : wasRejected
                   ? 'Message Cancelled'
                   : 'Send Slack Message'}
-            </CardTitle>
+            </p>
           </div>
-        </CardHeader>
-
-        <CardContent className="pt-4 space-y-3">
           {/* Channel */}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Channel</span>
@@ -494,14 +486,14 @@ export const InternetSearchToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-md overflow-hidden">
-        <CardHeader
-          className={cn(
-            'pb-3',
-            wasApproved && 'bg-status-success-muted',
-            wasRejected && 'bg-status-error-muted',
-          )}
-        >
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4 space-y-3">
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-md px-2 py-2',
+              wasApproved && 'bg-status-success-muted',
+              wasRejected && 'bg-status-error-muted',
+            )}
+          >
             {wasApproved && (
               <CheckCircle className="h-5 w-5 text-status-success" />
             )}
@@ -509,17 +501,14 @@ export const InternetSearchToolUI = makeAssistantToolUI<
             {!wasApproved && !wasRejected && (
               <Search className="h-5 w-5 text-status-info" />
             )}
-            <CardTitle className="text-base font-semibold">
+            <p className="text-base font-semibold text-foreground">
               {wasApproved
                 ? 'Search Completed'
                 : wasRejected
                   ? 'Search Cancelled'
                   : 'Internet Search'}
-            </CardTitle>
+            </p>
           </div>
-        </CardHeader>
-
-        <CardContent className="pt-4 space-y-3">
           {/* Search Query */}
           <div className="rounded-lg border bg-background p-3">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -642,14 +631,14 @@ export const CreateGitHubIssueToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-md overflow-hidden">
-        <CardHeader
-          className={cn(
-            'pb-3',
-            wasApproved && 'bg-status-success-muted',
-            wasRejected && 'bg-status-error-muted',
-          )}
-        >
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4 space-y-3">
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-md px-2 py-2',
+              wasApproved && 'bg-status-success-muted',
+              wasRejected && 'bg-status-error-muted',
+            )}
+          >
             {wasApproved && (
               <CheckCircle className="h-5 w-5 text-status-success" />
             )}
@@ -657,17 +646,14 @@ export const CreateGitHubIssueToolUI = makeAssistantToolUI<
             {!wasApproved && !wasRejected && (
               <Github className="h-5 w-5 text-foreground" />
             )}
-            <CardTitle className="text-base font-semibold">
+            <p className="text-base font-semibold text-foreground">
               {wasApproved
                 ? 'Issue Created'
                 : wasRejected
                   ? 'Issue Cancelled'
                   : 'Create GitHub Issue'}
-            </CardTitle>
+            </p>
           </div>
-        </CardHeader>
-
-        <CardContent className="pt-4 space-y-3">
           {/* Repository */}
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Repository</span>
@@ -783,27 +769,25 @@ export const ThinkToolUI = makeAssistantToolUI<ThinkArgs, string>({
 
     return (
       <Card className="w-full max-w-lg overflow-hidden my-2 border-dashed border-muted-foreground/30">
-        <CardHeader className="pb-2 py-2">
+        <CardContent className="pt-3 pb-3">
           <button
             onClick={() => setExpanded(!expanded)}
             className="flex items-center gap-2 text-left w-full"
           >
             <Brain className="h-3.5 w-3.5 text-muted-foreground" />
-            <CardTitle className="text-xs font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-muted-foreground">
               {isRunning ? 'Thinking...' : 'Internal Reasoning'}
-            </CardTitle>
+            </span>
             <span className="ml-auto text-xs text-muted-foreground">
               {expanded ? '▼' : '▶'}
             </span>
           </button>
-        </CardHeader>
-        {expanded && (
-          <CardContent className="pt-0 pb-3">
+          {expanded && (
             <p className="text-xs text-muted-foreground whitespace-pre-wrap">
               {args.thought}
             </p>
-          </CardContent>
-        )}
+          )}
+        </CardContent>
       </Card>
     );
   },
