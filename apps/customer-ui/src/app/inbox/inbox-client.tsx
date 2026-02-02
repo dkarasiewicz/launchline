@@ -39,6 +39,7 @@ const LINEA_CHANGED_SUBSCRIPTION = gql`
       id
       type
       changedAt
+      __typename
     }
   }
 `;
@@ -263,9 +264,7 @@ function EmptyThreadState({
             <Sparkles className="w-10 h-10 text-violet-400" />
           )}
         </div>
-        <h2 className="text-xl font-semibold text-foreground mb-2">
-          {title}
-        </h2>
+        <h2 className="text-xl font-semibold text-foreground mb-2">{title}</h2>
         <p className="text-muted-foreground">{description}</p>
 
         <div className="mt-6 text-left max-w-md mx-auto">
@@ -436,7 +435,9 @@ function InboxPageContent() {
     [],
   );
 
-  useSubscription(LINEA_CHANGED_SUBSCRIPTION, {
+  useSubscription<{
+    lineaChanged: Record<string, unknown>;
+  }>(LINEA_CHANGED_SUBSCRIPTION, {
     onData: ({ data }) => {
       const event = data.data?.lineaChanged;
       if (!event) return;
@@ -605,9 +606,7 @@ function InboxPageContent() {
         await assistantApi.threads().item({ id: itemId }).archive();
         await refetchThreads();
       } catch (error) {
-        setOptimisticArchivedIds((prev) =>
-          prev.filter((id) => id !== itemId),
-        );
+        setOptimisticArchivedIds((prev) => prev.filter((id) => id !== itemId));
         console.error('Failed to archive thread:', error);
       }
     },
@@ -1404,7 +1403,10 @@ function InboxPageContent() {
               </Badge>
             </div>
 
-            <GeneralLineaThread key={generalThread.id} threadId={generalThread.id} />
+            <GeneralLineaThread
+              key={generalThread.id}
+              threadId={generalThread.id}
+            />
           </>
         ) : !integrationsReady ? (
           <div className="flex-1 flex items-center justify-center">

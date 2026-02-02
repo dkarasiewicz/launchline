@@ -13,7 +13,7 @@ import {
   CheckIcon,
   Loader2,
 } from 'lucide-react';
-import { LogoIcon } from '@launchline/ui/components/logo';
+import { LogoIcon } from '../logo';
 
 /**
  * InboxUserMessage - User message component following assistant-ui patterns
