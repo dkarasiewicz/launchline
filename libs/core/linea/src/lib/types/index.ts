@@ -502,15 +502,11 @@ export const GetDecisionsInputSchema = z.object({
 
 export const ResolveIdentityInputSchema = z.object({
   name: z.string().min(1).describe('Name or username to search for'),
-  platform: z.preprocess(
-    (value) => {
-      if (value === '' || value === null || value === undefined) {
-        return undefined;
-      }
-      return value;
-    },
-    z.enum(['github', 'linear', 'slack', 'any']).optional().default('any'),
-  ).describe('Filter by platform'),
+  platform: z
+    .enum(['github', 'linear', 'slack', 'any'])
+    .optional()
+    .default('any')
+    .describe('Filter by platform'),
 });
 
 export const GetInboxItemsInputSchema = z.object({
