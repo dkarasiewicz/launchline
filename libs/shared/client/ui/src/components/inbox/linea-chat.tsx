@@ -21,7 +21,11 @@ import {
 } from 'lucide-react';
 
 import { InboxComposer } from './inbox-composer';
-import { InboxUserMessage, InboxAssistantMessage } from './inbox-messages';
+import {
+  InboxUserMessage,
+  InboxAssistantMessage,
+  InboxAssistantThinking,
+} from './inbox-messages';
 
 // Tool UIs - All registered tools
 import {
@@ -45,6 +49,7 @@ import {
   GetLinearTeamWorkloadTool,
   GetLinearCycleStatusTool,
   AddLinearCommentTool,
+  CreateLinearIssueTool,
   GenerateProjectUpdateTool,
 } from '../tool-ui';
 import { LogoIcon } from '../logo';
@@ -76,6 +81,8 @@ export function LineaChat() {
             }}
           />
 
+          <InboxAssistantThinking />
+
           <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto w-full flex flex-col gap-4 overflow-visible pb-4">
             <ThreadScrollToBottom />
             <InboxComposer />
@@ -101,6 +108,7 @@ export function LineaChat() {
       <GetLinearTeamWorkloadTool />
       <GetLinearCycleStatusTool />
       <AddLinearCommentTool />
+      <CreateLinearIssueTool />
       {/* Project update */}
       <GenerateProjectUpdateTool />
       {/* Human-in-the-loop Approval UIs */}

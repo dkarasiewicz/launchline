@@ -26,12 +26,13 @@ This skill provides instructions for accessing and working with Linear data thro
 | \`get_linear_team_workload\` | Workload distribution | Capacity and workload questions |
 | \`get_linear_cycle_status\` | Sprint/cycle progress | Sprint status questions |
 
-### Action Tools (Require Approval)
+### Action Tools (Explicit Request)
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
-| \`add_linear_comment\` | Add comment to issue | When user wants to add context or questions |
-| \`update_linear_ticket\` | Update issue fields | When user wants to change priority, assignee, etc. |
+| \`create_linear_issue\` | Create a new issue | Use when the user explicitly asks to file/create a ticket |
+| \`add_linear_comment\` | Add comment to issue | Use when the user wants to add context or questions |
+| \`update_linear_ticket\` | Update issue fields | Use when the user wants to change priority, assignee, etc. (confirm if unclear) |
 
 ## Instructions
 
@@ -43,6 +44,7 @@ Categorize the user's request:
 - **Specific Lookup**: "What's issue ABC-123 about?" → Use \`get_linear_issue_details\`
 - **Search**: "Find issues about authentication" → Use \`search_linear_issues\`
 - **Action Request**: "Update the priority" → Use action tools (require approval)
+- **Create Request**: "Create a ticket for X" → Use \`create_linear_issue\` with required fields
 
 ### 2. Choose the Right Filter
 

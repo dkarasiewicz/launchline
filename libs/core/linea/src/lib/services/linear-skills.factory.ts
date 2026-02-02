@@ -65,6 +65,25 @@ const AddLinearCommentSchema = z.object({
   body: z.string().describe('Comment content (markdown supported)'),
 });
 
+const CreateLinearIssueSchema = z.object({
+  title: z.string().describe('Issue title'),
+  description: z
+    .string()
+    .optional()
+    .describe('Issue description (markdown supported)'),
+  teamId: z.string().optional().describe('Team ID (defaults to first team)'),
+  projectId: z.string().optional().describe('Project ID'),
+  assigneeId: z.string().optional().describe('Assignee user ID'),
+  priority: z
+    .number()
+    .int()
+    .min(0)
+    .max(4)
+    .optional()
+    .describe('Priority (0=none, 1=urgent, 2=high, 3=medium, 4=low)'),
+  labelIds: z.array(z.string()).optional().describe('Label IDs to apply'),
+});
+
 const GetLinearCycleStatusSchema = z.object({
   cycleId: z
     .string()
@@ -101,6 +120,7 @@ export class LinearSkillsFactory {
       this.createGetLinearTeamWorkloadTool(),
       this.createGetLinearCycleStatusTool(),
       this.createAddLinearCommentTool(),
+      this.createCreateLinearIssueTool(),
     ];
   }
 
@@ -753,6 +773,91 @@ ${scopedIssues.nodes.length > 0 ? `\n⚠️ **${scopedIssues.nodes.length} issue
         description:
           'Add a comment to a Linear issue. Use this to provide updates, ask questions, or document decisions.',
         schema: AddLinearCommentSchema,
+      },
+    );
+  }
+
+  private createCreateLinearIssueTool(): StructuredToolInterface {
+    const getClient = this.getLinearClient.bind(this);
+    const logger = this.logger;
+
+    return tool(
+      async (
+        {
+          title,
+          description,
+          teamId,
+          projectId,
+          assigneeId,
+          priority,
+          labelIds,
+        },
+        config,
+      ) => {
+        const workspaceId = getWorkspaceId(config);
+        const client = await getClient(workspaceId);
+
+        if (!client) {
+          return '❌ Linear integration not connected. Please connect Linear in Settings > Integrations.';
+        }
+
+        try {
+          let resolvedTeamId = teamId;
+          if (!resolvedTeamId) {
+            const viewer = await client.viewer;
+            const teams = await viewer.teams();
+            const firstTeam = teams.nodes[0];
+            if (!firstTeam) {
+              return 'No teams found in Linear. Provide a teamId to create the issue.';
+            }
+            resolvedTeamId = firstTeam.id;
+          }
+
+          const response = await client.createIssue({
+            title,
+            description,
+            teamId: resolvedTeamId,
+            projectId,
+            assigneeId,
+            priority,
+            labelIds,
+          });
+
+          if (!response.success || !response.issue) {
+            return 'Failed to create Linear issue.';
+          }
+
+          const issue = await response.issue;
+
+          return JSON.stringify(
+            {
+              success: true,
+              action: 'create_linear_issue',
+              id: issue.id,
+              identifier: issue.identifier,
+              title: issue.title,
+              url: issue.url,
+              teamId: issue.teamId,
+              projectId: issue.projectId,
+              assigneeId: issue.assigneeId,
+              priority: issue.priority,
+            },
+            null,
+            2,
+          );
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, title },
+            'Failed to create Linear issue',
+          );
+          return `Failed to create Linear issue: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'create_linear_issue',
+        description:
+          'Create a new Linear issue. Use this when the user asks to create or file a ticket.',
+        schema: CreateLinearIssueSchema,
       },
     );
   }

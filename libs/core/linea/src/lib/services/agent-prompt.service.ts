@@ -103,6 +103,21 @@ export class AgentPromptService {
     };
   }
 
+  async appendWorkspacePrompt(
+    workspaceId: string,
+    addition: string,
+    updatedBy?: string,
+  ): Promise<WorkspacePromptRecord> {
+    const existing = await this.getWorkspacePrompt(workspaceId);
+    const trimmed = addition.trim();
+    const formatted = trimmed.startsWith('-') ? trimmed : `- ${trimmed}`;
+    const nextPrompt = existing
+      ? `${existing.trim()}\n${formatted}`
+      : formatted;
+
+    return this.upsertWorkspacePrompt(workspaceId, nextPrompt, updatedBy);
+  }
+
   private async getPromptRecord(
     workspaceId: string,
   ): Promise<WorkspacePromptRecord | null> {

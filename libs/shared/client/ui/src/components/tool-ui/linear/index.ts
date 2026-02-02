@@ -10,4 +10,5 @@ export {
   GetLinearTeamWorkloadToolUI,
   GetLinearCycleStatusToolUI,
   AddLinearCommentToolUI,
+  CreateLinearIssueToolUI,
 } from './linear';

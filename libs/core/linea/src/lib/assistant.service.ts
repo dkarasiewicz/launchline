@@ -126,8 +126,8 @@ export class AssistantService {
       }
 
       const sortedThreads = threads.sort((a, b) => {
-        const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
-        const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        const aTime = new Date(a.createdAt || a.updatedAt || 0).getTime();
+        const bTime = new Date(b.createdAt || b.updatedAt || 0).getTime();
         return bTime - aTime;
       });
 

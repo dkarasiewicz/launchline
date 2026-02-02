@@ -479,6 +479,11 @@ Use this when you need to know the team's preferences, guardrails, or operating 
 
 Use this when new operating rules, preferences, or guardrails are established.
 This does NOT require user confirmation by default.`,
+
+  appendWorkspacePrompt: `Append a single instruction to the workspace prompt.
+
+Use this when the user states a stable preference, guardrail, or workflow rule.
+This does NOT require user confirmation by default.`,
 } as const;
 
 export const ERROR_MESSAGES = {

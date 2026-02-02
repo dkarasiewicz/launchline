@@ -426,7 +426,8 @@ function InboxPageContent() {
 
     return window.localStorage.getItem('linea.showResolved') === 'true';
   });
-  const [sortBy, setSortBy] = useState<'priority' | 'time'>('priority');
+  const [sortBy, setSortBy] = useState<'priority' | 'time'>('time');
+  const [restoringItemId, setRestoringItemId] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [justResolvedId, setJustResolvedId] = useState<string | null>(null);
@@ -553,13 +554,17 @@ function InboxPageContent() {
       .filter((thread) => thread.isInboxThread)
       .map((thread) => {
         const isOptimisticArchived = optimisticArchivedSet.has(thread.remoteId);
+        const rawInboxStatus = (thread.inboxStatus || '').toLowerCase();
+        const resolvedByStatus = resolvedStatusSet.has(rawInboxStatus);
         const normalizedThreadStatus =
           isOptimisticArchived ||
-          (thread.status || '').toLowerCase() === 'archived'
+          (thread.status || '').toLowerCase() === 'archived' ||
+          resolvedByStatus
             ? 'archived'
             : 'regular';
         const fallbackStatus =
           normalizedThreadStatus === 'archived' ? 'archived' : 'pending';
+        const normalizedInboxStatus = rawInboxStatus || fallbackStatus;
 
         return {
           id: thread.remoteId,
@@ -567,12 +572,16 @@ function InboxPageContent() {
           type: (
             thread.inboxItemType || 'update'
           ).toLowerCase() as InboxItemType,
-          status: thread.inboxStatus?.toLowerCase() || fallbackStatus,
+          status: normalizedInboxStatus,
           threadStatus: normalizedThreadStatus,
           priority: thread.inboxPriority?.toLowerCase() || 'medium',
           title: thread.title || 'Untitled',
           summary: thread.summary || '',
-          timestamp: thread.createdAt ? new Date(thread.createdAt) : new Date(),
+          timestamp: thread.createdAt
+            ? new Date(thread.createdAt)
+            : thread.updatedAt
+              ? new Date(thread.updatedAt)
+              : new Date(0),
           projectId: thread.projectId || '',
           featureId: thread.featureId || '',
           linkedContexts: [],
@@ -603,6 +612,23 @@ function InboxPageContent() {
       }
     },
     [assistantApi, refetchThreads],
+  );
+
+  const restoreItem = useCallback(
+    async (itemId: string) => {
+      if (!itemId || restoringItemId) return;
+      setRestoringItemId(itemId);
+      try {
+        await assistantApi.threads().item({ id: itemId }).unarchive();
+        setOptimisticArchivedIds((prev) => prev.filter((id) => id !== itemId));
+        await refetchThreads();
+      } catch (error) {
+        console.error('Failed to restore thread:', error);
+      } finally {
+        setRestoringItemId(null);
+      }
+    },
+    [assistantApi, refetchThreads, restoringItemId],
   );
 
   // Filter and sort items
@@ -1227,7 +1253,58 @@ function InboxPageContent() {
 
       {/* Main Chat Panel */}
       <div className="flex-1 flex flex-col min-w-0">
-        {selectedItem ? (
+        {selectedItem && isResolvedItem(selectedItem) ? (
+          <>
+            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-border/50">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-status-success/10 text-status-success flex items-center justify-center flex-shrink-0">
+                  <Check className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-medium truncate">
+                    {selectedItem.title}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Resolved · <TimeAgo date={selectedItem.timestamp} /> ago
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Badge
+                  variant="secondary"
+                  className="text-xs bg-status-success/10 text-status-success"
+                >
+                  Archived
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => restoreItem(selectedItem.id)}
+                  disabled={restoringItemId === selectedItem.id}
+                  className="h-8 text-xs bg-transparent"
+                >
+                  Restore
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center px-8">
+              <div className="max-w-xl w-full rounded-2xl border border-border/50 bg-card/40 p-6 text-sm text-muted-foreground">
+                <p className="text-foreground font-medium mb-2">
+                  This item is archived
+                </p>
+                <p className="mb-4">
+                  Restore the item to continue the conversation or take action.
+                </p>
+                {selectedItem.summary && (
+                  <div className="rounded-lg border border-border/40 bg-background/60 p-4 text-sm text-foreground">
+                    {selectedItem.summary}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : selectedItem ? (
           <>
             {/* Header */}
             <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-border/50">

@@ -52,6 +52,7 @@ import {
   UpdateLinearTicketInputSchema,
   GetWorkspacePromptInputSchema,
   UpdateWorkspacePromptInputSchema,
+  AppendWorkspacePromptInputSchema,
 } from '../types';
 import { TOOL_DESCRIPTIONS } from '../prompts';
 import { LineaJobsService } from '../jobs/linea-jobs.service';
@@ -86,6 +87,14 @@ function getToolCallId(config: RunnableConfig): string {
     | { id?: string }
     | undefined;
   return toolCall?.id || `tool-${Date.now()}`;
+}
+
+function looksLikeExecutionTask(task: string): boolean {
+  const actionHint =
+    /(create|file|open|send|post|schedule|reply|comment|update|assign|close|merge|label|draft)/i;
+  const targetHint =
+    /(linear|ticket|issue|bug|github|pull request|pr|slack|email|calendar|meeting|invite)/i;
+  return actionHint.test(task) && targetHint.test(task);
 }
 
 function createContext(config: RunnableConfig): GraphContext {
@@ -158,6 +167,7 @@ export class ToolsFactory {
       this.createGetTeamInsightsTool(),
       this.createGetWorkspacePromptTool(),
       this.createUpdateWorkspacePromptTool(),
+      this.createAppendWorkspacePromptTool(),
     ];
   }
 
@@ -267,13 +277,13 @@ export class ToolsFactory {
         const workspaceId = getWorkspaceId(config);
         const userId = getUserId(config);
         const currentThreadId = getThreadId(config);
-        const resolvedReplyToThreadId =
-          replyToThreadId ||
-          (deliverToInbox === false ? currentThreadId : undefined);
-        const resolvedMode = mode === 'execute' ? 'execute' : 'suggest';
+        const resolvedReplyToThreadId = replyToThreadId ?? currentThreadId;
+        const resolvedMode =
+          mode === 'execute' || looksLikeExecutionTask(task)
+            ? 'execute'
+            : 'suggest';
         const resolvedDeliverToInbox =
-          deliverToInbox ??
-          (!resolvedReplyToThreadId && resolvedMode !== 'execute');
+          deliverToInbox ?? !resolvedReplyToThreadId;
 
         let runAtDate: Date | undefined;
         if (runAt) {
@@ -298,14 +308,14 @@ export class ToolsFactory {
           });
 
           if (result.cron) {
-            return `Scheduled recurring task (${result.jobId}) with cron: ${result.cron}.`;
+            return `Scheduled recurring task (${result.jobId}) with cron: ${result.cron} (${resolvedMode}).`;
           }
 
           if (result.runAt) {
-            return `Scheduled task (${result.jobId}) for ${result.runAt.toISOString()}.`;
+            return `Scheduled task (${result.jobId}) for ${result.runAt.toISOString()} (${resolvedMode}).`;
           }
 
-          return `Scheduled task (${result.jobId}).`;
+          return `Scheduled task (${result.jobId}) (${resolvedMode}).`;
         } catch (error) {
           logger.error(
             { err: error, workspaceId, userId },
@@ -586,6 +596,39 @@ export class ToolsFactory {
     );
   }
 
+  private createAppendWorkspacePromptTool() {
+    const promptService = this.agentPromptService;
+    const logger = this.logger;
+
+    return tool(
+      async ({ addition }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+
+        try {
+          const record = await promptService.appendWorkspacePrompt(
+            workspaceId,
+            addition,
+            userId,
+          );
+
+          return `Workspace instructions appended (v${record.version}).`;
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId },
+            'Append workspace prompt failed',
+          );
+          return `Error updating workspace instructions: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      },
+      {
+        name: 'append_workspace_prompt',
+        description: TOOL_DESCRIPTIONS.appendWorkspacePrompt,
+        schema: AppendWorkspacePromptInputSchema,
+      },
+    );
+  }
+
   private createGetBlockersTool() {
     const memoryService = this.memoryService;
     const logger = this.logger;
@@ -756,7 +799,7 @@ export class ToolsFactory {
           );
 
           if (!results || results.length === 0) {
-            return 'No inbox items found.';
+            return JSON.stringify({ items: [] });
           }
 
           const items = results
@@ -768,25 +811,27 @@ export class ToolsFactory {
             })
             .slice(0, limit);
 
-          if (items.length === 0) {
-            return 'No inbox items match your criteria.';
-          }
+          const payload = {
+            items: items.map((item: Record<string, unknown>) => ({
+              id: String(item['id'] || item['threadId'] || item['title'] || ''),
+              type: String(item['type'] || ''),
+              priority: String(item['priority'] || ''),
+              title: String(item['title'] || ''),
+              summary: String(item['summary'] || ''),
+              createdAt: String(item['createdAt'] || item['created_at'] || ''),
+            })),
+          };
 
-          return items
-            .map((item: Record<string, unknown>, i: number) => {
-              const p = String(item['priority'] || '').toUpperCase();
-              const t = String(item['type'] || '');
-              const title = String(item['title'] || '');
-              const summary = String(item['summary'] || '');
-              return `${i + 1}. [${p}] ${t}: ${title}\n   ${summary}`;
-            })
-            .join('\n\n');
+          return JSON.stringify(payload);
         } catch (error) {
           logger.error(
             { err: error, workspaceId, type, priority, limit },
             'Get inbox items failed',
           );
-          return `Error fetching inbox items: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          return JSON.stringify({
+            items: [],
+            error: `Error fetching inbox items: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          });
         }
       },
       {

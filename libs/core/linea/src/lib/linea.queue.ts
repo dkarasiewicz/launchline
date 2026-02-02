@@ -655,9 +655,14 @@ export class LineaQueue {
     const workspacePrompt = await this.agentPromptService.getWorkspacePrompt(
       payload.workspaceId,
     );
+    const hasHistory = await this.hasThreadHistory(
+      threadId,
+      payload.workspaceId,
+      userId,
+    );
 
     const messages: Array<{ type: string; content: string }> = [
-      ...(workspacePrompt
+      ...(workspacePrompt && !hasHistory
         ? [
             {
               type: 'system',
@@ -713,5 +718,25 @@ export class LineaQueue {
       },
       'Replied to Slack message',
     );
+  }
+
+  private async hasThreadHistory(
+    threadId: string,
+    workspaceId: string,
+    userId: string,
+  ): Promise<boolean> {
+    try {
+      const state = await this.agent.graph.getState({
+        configurable: {
+          thread_id: threadId,
+          workspaceId,
+          userId,
+        },
+      });
+      const messages = (state?.values as { messages?: unknown[] })?.messages;
+      return Array.isArray(messages) && messages.length > 0;
+    } catch {
+      return false;
+    }
   }
 }

@@ -28,6 +28,7 @@ export {
   GetLinearTeamWorkloadToolUI as GetLinearTeamWorkloadTool,
   GetLinearCycleStatusToolUI as GetLinearCycleStatusTool,
   AddLinearCommentToolUI as AddLinearCommentTool,
+  CreateLinearIssueToolUI as CreateLinearIssueTool,
 } from './linear';
 
 // Project update tool

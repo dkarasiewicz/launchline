@@ -55,30 +55,11 @@ async function* streamMessages({
     .pipeThrough(SSEDecoder());
 
   const reader = stream.getReader();
-  const getConstructorName = (
-    raw: SerializedConstructor | Record<string, unknown>,
-  ): string | null => {
-    if (!raw || typeof raw !== 'object') {
-      return null;
-    }
-
-    const candidate = raw as SerializedConstructor;
-    if (candidate.lc === 1 && Array.isArray(candidate.id)) {
-      return candidate.id.at(-1) ?? null;
-    }
-
-    return null;
-  };
   const parseMessage = (
     raw: SerializedConstructor | Record<string, unknown>,
   ): LangChainMessage | null => {
     try {
-      const parsed = constructMessageFromParams(raw as SerializedConstructor);
-      const constructorName = getConstructorName(raw);
-      if (constructorName && constructorName.endsWith('MessageChunk')) {
-        parsed.type = constructorName as typeof parsed.type;
-      }
-      return parsed;
+      return constructMessageFromParams(raw as SerializedConstructor);
     } catch (error) {
       console.warn('[LaunchlineRuntime] Failed to parse stream message', error);
       return null;
@@ -104,25 +85,20 @@ async function* streamMessages({
 
           if (
             !parsedMessage ||
-            !['ai', 'assistant', 'AIMessageChunk'].includes(parsedMessage.type)
+            (parsedMessage.type !== 'ai' && parsedMessage.type !== 'assistant')
           ) {
             continue;
           }
 
-          if (parsedMessage.type === 'AIMessageChunk') {
-            yield {
-              event: 'messages',
-              data: [
-                parsedMessage,
-                (tuple?.[1] ?? {}) as Record<string, unknown>,
-              ],
-            };
-          } else {
-            yield {
-              event: 'messages/partial',
-              data: [parsedMessage],
-            };
-          }
+          parsedMessage.type = 'AIMessageChunk' as 'ai';
+
+          yield {
+            event: 'messages',
+            data: [
+              parsedMessage,
+              (tuple?.[1] ?? {}) as Record<string, unknown>,
+            ],
+          };
           break;
         }
         case 'messages/partial':
@@ -140,9 +116,7 @@ async function* streamMessages({
             .filter(
               (message): message is LangChainMessage =>
                 !!message &&
-                ['ai', 'tool', 'human', 'system', 'AIMessageChunk'].includes(
-                  message.type,
-                ),
+                ['ai', 'tool', 'human', 'system'].includes(message.type),
             );
 
           if (parsedMessages.length === 0) {
@@ -162,18 +136,11 @@ async function* streamMessages({
             break;
           }
 
-          const allowedKeys = new Set(['model_request', 'tools']);
-          const updateKeys = Object.keys(updatePayload);
-          const hasAllowedKey = updateKeys.some((key) => allowedKeys.has(key));
-          if (!hasAllowedKey) {
-            break;
-          }
-
           const messagesBatch: LangChainMessage[] = [];
           let interrupts: unknown[] | undefined;
 
           const entries = Object.entries(updatePayload).filter(
-            ([key, value]) => value !== undefined && allowedKeys.has(key),
+            ([, value]) => value !== undefined,
           );
           const sortedEntries = [
             ...entries.filter(([key]) => key !== 'tools'),
@@ -206,9 +173,7 @@ async function* streamMessages({
                 .filter(
                   (message): message is LangChainMessage =>
                     !!message &&
-                    ['ai', 'tool', 'human', 'system', 'AIMessageChunk'].includes(
-                      message.type,
-                    ),
+                    ['ai', 'tool', 'human', 'system'].includes(message.type),
                 );
               messagesBatch.push(...parsedMessages);
             }

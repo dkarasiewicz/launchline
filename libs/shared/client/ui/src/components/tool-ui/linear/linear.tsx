@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Card, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import {
   Loader2,
@@ -49,6 +49,15 @@ function ThinkingLoader({ message }: { message: string }) {
       <span className="text-sm">{message}</span>
     </div>
   );
+}
+
+function parseJsonResult<T>(content?: string): T | null {
+  if (!content) return null;
+  try {
+    return JSON.parse(content) as T;
+  } catch {
+    return null;
+  }
 }
 
 type ParsedIssue = {
@@ -97,6 +106,26 @@ type ParsedCycleStatus = {
   issueCounts?: Record<string, string>;
   points?: string;
   warning?: string;
+};
+
+type CreateLinearIssueArgs = {
+  title: string;
+  description?: string;
+  teamId?: string;
+  projectId?: string;
+  assigneeId?: string;
+  priority?: number;
+  labelIds?: string[];
+};
+
+type CreateLinearIssueResult = {
+  success?: boolean;
+  action?: string;
+  id?: string;
+  identifier?: string;
+  title?: string;
+  url?: string;
+  error?: string;
 };
 
 function extractSection(content: string, heading: string): string | null {
@@ -406,13 +435,13 @@ export const GetLinearIssuesToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-      <CardHeader className="py-3 bg-violet-500/5">
-          <div className="flex items-center justify-between gap-3">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <LinearLogo className="h-4 w-4 text-violet-500" />
-              <CardTitle className="text-sm font-medium">
+              <p className="text-sm font-medium text-foreground">
                 {isRunning ? 'Fetching issues...' : 'Linear Issues'}
-              </CardTitle>
+              </p>
             </div>
             <Badge
               variant="outline"
@@ -421,8 +450,6 @@ export const GetLinearIssuesToolUI = makeAssistantToolUI<
               {filterLabels[args.filter] || args.filter}
             </Badge>
           </div>
-        </CardHeader>
-        <CardContent className="pt-4">
           {isRunning ? (
             <ThinkingLoader message="Fetching issues from Linear..." />
           ) : isError ? (
@@ -502,15 +529,13 @@ export const GetLinearIssueDetailsToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-violet-500/5">
-          <div className="flex items-center gap-2">
-            <LinearLogo className="h-4 w-4 text-violet-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Loading issue...' : `Issue: ${args.issueId}`}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <LinearLogo className="h-4 w-4 text-violet-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Loading issue...' : `Issue ${args.issueId}`}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message={`Loading ${args.issueId}...`} />
           ) : isError ? (
@@ -620,19 +645,19 @@ export const SearchLinearIssuesToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-violet-500/5">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-violet-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Searching...' : 'Search Results'}
-            </CardTitle>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Query: &quot;{args.query}&quot;
-            {args.includeArchived && ' (including archived)'}
-          </p>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-violet-500" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Searching...' : 'Search Results'}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Query: &quot;{args.query}&quot;
+              {args.includeArchived && ' (including archived)'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message={`Searching for "${args.query}"...`} />
           ) : isError ? (
@@ -713,15 +738,13 @@ export const GetLinearProjectStatusToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-emerald-500/5">
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-emerald-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Loading projects...' : 'Project Status'}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Target className="h-4 w-4 text-emerald-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Loading projects...' : 'Project Status'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Fetching project status..." />
           ) : isError ? (
@@ -833,15 +856,13 @@ export const GetLinearTeamWorkloadToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-blue-500/5">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-blue-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Loading workload...' : 'Team Workload'}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Users className="h-4 w-4 text-blue-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Loading workload...' : 'Team Workload'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Analyzing team workload..." />
           ) : isError ? (
@@ -905,15 +926,13 @@ export const GetLinearCycleStatusToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-2xl overflow-hidden my-2">
-        <CardHeader className="pb-3 bg-amber-500/5">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-amber-500" />
-            <CardTitle className="text-sm font-medium">
-              {isRunning ? 'Loading cycle...' : 'Cycle Status'}
-            </CardTitle>
-          </div>
-        </CardHeader>
         <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-amber-500" />
+            <p className="text-sm font-medium text-foreground">
+              {isRunning ? 'Loading cycle...' : 'Cycle Status'}
+            </p>
+          </div>
           {isRunning ? (
             <ThinkingLoader message="Fetching cycle status..." />
           ) : isError ? (
@@ -1001,14 +1020,8 @@ export const AddLinearCommentToolUI = makeAssistantToolUI<
 
     return (
       <Card className="w-full max-w-md overflow-hidden my-2">
-        <CardHeader
-          className={cn(
-            'pb-3',
-            isSuccess && 'bg-green-500/10',
-            isError && 'bg-destructive/10',
-          )}
-        >
-          <div className="flex items-center gap-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex items-center gap-2">
             {isSuccess ? (
               <CheckCircle className="h-4 w-4 text-green-500" />
             ) : isError ? (
@@ -1016,7 +1029,7 @@ export const AddLinearCommentToolUI = makeAssistantToolUI<
             ) : (
               <MessageSquare className="h-4 w-4 text-violet-500" />
             )}
-            <CardTitle className="text-sm font-medium">
+            <p className="text-sm font-medium text-foreground">
               {isRunning
                 ? 'Adding comment...'
                 : isSuccess
@@ -1024,13 +1037,11 @@ export const AddLinearCommentToolUI = makeAssistantToolUI<
                   : isError
                     ? 'Failed'
                     : 'Add Comment'}
-            </CardTitle>
+            </p>
             <Badge variant="outline" className="ml-auto text-xs font-mono">
               {args.issueId}
             </Badge>
           </div>
-        </CardHeader>
-        <CardContent className="pt-4">
           {isRunning ? (
             <ThinkingLoader message="Adding comment..." />
           ) : (
@@ -1054,6 +1065,78 @@ export const AddLinearCommentToolUI = makeAssistantToolUI<
                 </p>
               )}
             </>
+          )}
+        </CardContent>
+      </Card>
+    );
+  },
+});
+
+// ============================================================================
+// CREATE LINEAR ISSUE
+// ============================================================================
+
+export const CreateLinearIssueToolUI = makeAssistantToolUI<
+  CreateLinearIssueArgs,
+  string
+>({
+  toolName: 'create_linear_issue',
+  render: function CreateLinearIssueUI({ args, result, status }) {
+    const isRunning = status.type === 'running';
+    const parsed = parseJsonResult<CreateLinearIssueResult>(result);
+    const isError =
+      result?.startsWith('❌') ||
+      result?.startsWith('Error') ||
+      Boolean(parsed?.error) ||
+      parsed?.success === false;
+
+    return (
+      <Card className="w-full max-w-2xl overflow-hidden my-2">
+        <CardContent className="pt-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <LinearLogo className="h-4 w-4 text-violet-500" />
+              <p className="text-sm font-medium text-foreground">
+                {isRunning ? 'Creating issue...' : 'Linear Issue'}
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="text-[10px] uppercase tracking-widest text-muted-foreground"
+            >
+              Create
+            </Badge>
+          </div>
+          {isRunning ? (
+            <ThinkingLoader message="Creating issue in Linear..." />
+          ) : isError ? (
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="text-sm">
+                {parsed?.error || result || 'Failed to create issue.'}
+              </span>
+            </div>
+          ) : parsed?.success ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-emerald-500" />
+                <span className="text-sm font-medium text-foreground">
+                  {parsed.identifier || 'Issue created'}
+                </span>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-background/60 p-3">
+                <p className="text-sm font-medium text-foreground">
+                  {parsed.title || args.title}
+                </p>
+                {parsed.url && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {parsed.url}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <ToolMarkdown content={result || 'Issue created.'} />
           )}
         </CardContent>
       </Card>

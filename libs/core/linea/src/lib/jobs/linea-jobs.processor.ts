@@ -90,9 +90,14 @@ export class LineaJobsProcessor extends WorkerHost {
     const inQuietHours = this.isInQuietHours(settings, now);
     const workspacePrompt =
       await this.agentPromptService.getWorkspacePrompt(workspaceId);
+    const hasHistory = await this.hasThreadHistory(
+      threadId,
+      workspaceId,
+      userId,
+    );
 
     const messages: Array<{ type: string; content: string }> = [
-      ...(workspacePrompt
+      ...(workspacePrompt && !hasHistory
         ? [
             {
               type: 'system',
@@ -230,9 +235,14 @@ export class LineaJobsProcessor extends WorkerHost {
     const threadId = replyToThreadId || `scheduled-task-${taskId}`;
     const workspacePrompt =
       await this.agentPromptService.getWorkspacePrompt(workspaceId);
+    const hasHistory = await this.hasThreadHistory(
+      threadId,
+      workspaceId,
+      userId,
+    );
 
     const messages: Array<{ type: string; content: string }> = [
-      ...(workspacePrompt
+      ...(workspacePrompt && !hasHistory
         ? [
             {
               type: 'system',
@@ -325,7 +335,7 @@ If there is nothing urgent, set "actionable" to false and summarize the state br
   private buildScheduledTaskPrompt(mode: 'suggest' | 'execute'): string {
     const actionPolicy =
       mode === 'execute'
-        ? 'You have explicit approval to execute safe actions needed for this task. You do NOT need additional confirmation.'
+        ? 'You have explicit approval to execute safe actions needed for this task. If the task asks to create/update something and you have enough details, do it.'
         : 'Do NOT execute actions. Provide a plan or draft output instead.';
 
     return `You are running a scheduled task for Linea.
@@ -335,7 +345,8 @@ ${actionPolicy}
 Guardrails:
 - Avoid destructive actions (deletions, mass updates).
 - If unsure, stop and summarize next steps.
-- Keep responses concise and actionable.`;
+- Keep responses concise and actionable.
+- When executing, use tools directly instead of asking for confirmation.`;
   }
 
   private extractReply(
@@ -466,6 +477,8 @@ Guardrails:
       normalized.includes('no urgent') ||
       normalized.includes('nothing urgent') ||
       normalized.includes('no updates') ||
+      normalized.includes('no changes') ||
+      normalized.includes('no changes since last run') ||
       summary.trim().length < 20
     );
   }
@@ -517,5 +530,25 @@ Guardrails:
       .join('\n');
 
     await this.slackService.postMessage(token, channelId, lines);
+  }
+
+  private async hasThreadHistory(
+    threadId: string,
+    workspaceId: string,
+    userId: string,
+  ): Promise<boolean> {
+    try {
+      const state = await this.agent.graph.getState({
+        configurable: {
+          thread_id: threadId,
+          workspaceId,
+          userId,
+        },
+      });
+      const messages = (state?.values as { messages?: unknown[] })?.messages;
+      return Array.isArray(messages) && messages.length > 0;
+    } catch {
+      return false;
+    }
   }
 }

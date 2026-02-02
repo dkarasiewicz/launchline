@@ -859,6 +859,13 @@ export const UpdateWorkspacePromptInputSchema = z.object({
   prompt: z.string().min(1).describe('Updated workspace instructions'),
 });
 
+export const AppendWorkspacePromptInputSchema = z.object({
+  addition: z
+    .string()
+    .min(1)
+    .describe('Instruction to append to workspace instructions'),
+});
+
 export type SearchMemoriesInput = z.infer<typeof SearchMemoriesInputSchema>;
 export type SaveMemoryInput = z.infer<typeof SaveMemoryInputSchema>;
 export type GetBlockersInput = z.infer<typeof GetBlockersInputSchema>;
@@ -916,6 +923,9 @@ export type GetWorkspacePromptInput = z.infer<
 >;
 export type UpdateWorkspacePromptInput = z.infer<
   typeof UpdateWorkspacePromptInputSchema
+>;
+export type AppendWorkspacePromptInput = z.infer<
+  typeof AppendWorkspacePromptInputSchema
 >;
 
 const LLMObservationTypeValues = [

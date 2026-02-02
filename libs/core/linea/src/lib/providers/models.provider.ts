@@ -22,7 +22,7 @@ export const modelProvider: Provider = {
         apiKey: config.get<string>('ai.models.primary.apiKey'),
         baseURL: config.get<string>('ai.models.primary.modelUrl'),
       },
-      temperature: 0,
+      //      temperature: 0,
     }),
   inject: [ConfigService],
 };
@@ -39,7 +39,7 @@ export const modelFastProvider: Provider = {
         apiKey: config.get<string>('ai.models.fast.apiKey'),
         baseURL: config.get<string>('ai.models.fast.modelUrl'),
       },
-      temperature: 0,
+      //      temperature: 0,
     }),
   inject: [ConfigService],
 };
@@ -57,7 +57,7 @@ export const modelAnalysisProvider: Provider = {
         apiKey: config.get<string>('ai.models.analysis.apiKey'),
         baseURL: config.get<string>('ai.models.analysis.modelUrl'),
       },
-      temperature: 0,
+      //      temperature: 0,
     }),
   inject: [ConfigService],
 };
@@ -75,7 +75,7 @@ export const modelReasoningProvider: Provider = {
         apiKey: config.get<string>('ai.models.reasoning.apiKey'),
         baseURL: config.get<string>('ai.models.reasoning.modelUrl'),
       },
-      temperature: 0,
+      //      temperature: 0,
     }),
   inject: [ConfigService],
 };

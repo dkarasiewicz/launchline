@@ -7,12 +7,13 @@ import {
 } from '@assistant-ui/react';
 import { Button } from '../ui/button';
 import {
-  Sparkles,
   User,
   RefreshCwIcon,
   CopyIcon,
   CheckIcon,
+  Loader2,
 } from 'lucide-react';
+import { LogoIcon } from '@launchline/ui/components/logo';
 
 /**
  * InboxUserMessage - User message component following assistant-ui patterns
@@ -20,17 +21,17 @@ import {
 export function InboxUserMessage() {
   return (
     <MessagePrimitive.Root
-      className="aui-user-message-root fade-in slide-in-from-bottom-1 mx-auto grid w-full animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] gap-y-2 py-3 duration-150 [&:where(>*)]:col-start-2"
+      className="aui-user-message-root fade-in slide-in-from-bottom-1 mx-auto w-full animate-in py-3 duration-150"
       data-role="user"
     >
-      <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-        <div className="aui-user-message-content wrap-break-word rounded-2xl rounded-tr-sm bg-primary text-primary-foreground px-4 py-2.5 shadow-sm">
+      <div className="flex justify-end gap-2">
+        <div className="aui-user-message-content wrap-break-word max-w-[75%] rounded-2xl rounded-tr-sm bg-primary text-primary-foreground px-4 py-2.5 shadow-sm">
           <MessagePrimitive.Parts />
         </div>
-      </div>
-      <div className="aui-user-message-avatar col-start-2 flex items-start justify-end">
-        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-          <User className="w-4 h-4 text-muted-foreground" />
+        <div className="aui-user-message-avatar flex items-start justify-end">
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+            <User className="w-4 h-4 text-muted-foreground" />
+          </div>
         </div>
       </div>
     </MessagePrimitive.Root>
@@ -48,7 +49,7 @@ export function InboxAssistantMessage() {
     >
       <div className="flex gap-3 group">
         <div className="aui-assistant-message-avatar w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <Sparkles className="w-4 h-4 text-primary" />
+          <LogoIcon className="w-4 h-4 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="aui-assistant-message-content wrap-break-word rounded-2xl rounded-tl-sm bg-card border border-border/50 px-4 py-2.5 shadow-sm text-foreground leading-relaxed">
@@ -60,6 +61,42 @@ export function InboxAssistantMessage() {
         </div>
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+export function InboxAssistantThinking({
+  label = 'Linea is thinking...',
+}: {
+  label?: string;
+}) {
+  return (
+    <AssistantIf
+      condition={({ thread }) => {
+        const messages = thread.messages;
+        const last = messages.length > 0 ? messages[messages.length - 1] : null;
+        const lastRole = last?.role;
+        const lastStatus =
+          lastRole === 'assistant' ? last?.status?.type : undefined;
+        return (
+          thread.isRunning &&
+          (lastRole !== 'assistant' || lastStatus === 'running')
+        );
+      }}
+    >
+      <div className="fade-in slide-in-from-bottom-1 relative mx-auto w-full animate-in py-3 duration-150">
+        <div className="flex gap-3 group">
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <LogoIcon className="w-4 h-4 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="rounded-2xl rounded-tl-sm bg-card border border-border/50 px-4 py-2.5 shadow-sm text-foreground/80 leading-relaxed flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">{label}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AssistantIf>
   );
 }
 

@@ -115,7 +115,7 @@ function ThinkingLoader({
 
 export const GetInboxItemsToolUI = makeAssistantToolUI<
   GetInboxItemsArgs,
-  string
+  unknown
 >({
   toolName: 'get_inbox_items',
   render: function GetInboxItemsUI({ args, result, status }) {
@@ -132,9 +132,15 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
       }
     }, [status.type]);
 
-    let resultObj: GetInboxItemsResult | undefined;
+    let resultObj: (GetInboxItemsResult & { error?: string }) | undefined;
     try {
-      resultObj = result ? JSON.parse(result) : undefined;
+      if (typeof result === 'string') {
+        resultObj = result ? JSON.parse(result) : undefined;
+      } else if (result && typeof result === 'object') {
+        resultObj = result as GetInboxItemsResult & { error?: string };
+      } else {
+        resultObj = undefined;
+      }
     } catch {
       resultObj = undefined;
     }
@@ -184,7 +190,13 @@ export const GetInboxItemsToolUI = makeAssistantToolUI<
             </DataTableErrorBoundary>
           )}
 
-          {showContent && !hasItems && !isRunning && (
+          {showContent && resultObj?.error && !isRunning && (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              {resultObj.error}
+            </p>
+          )}
+
+          {showContent && !hasItems && !isRunning && !resultObj?.error && (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No inbox items found.
             </p>

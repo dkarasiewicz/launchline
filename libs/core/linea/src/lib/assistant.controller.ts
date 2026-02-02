@@ -158,13 +158,14 @@ export class AssistantController {
     let enrichedMessages = messages;
 
     const thread = await this.assistantService.getThread(currentThreadId);
+    const hasHistory = await hasThreadHistory(
+      this.agent,
+      currentThreadId,
+      workspace.id,
+      currentUser.userId,
+    );
+
     if (thread?.isInboxThread && thread.workspaceId === workspace.id) {
-      const hasHistory = await hasThreadHistory(
-        this.agent,
-        currentThreadId,
-        workspace.id,
-        currentUser.userId,
-      );
       const alreadyInjected = messages.some(
         (message) =>
           message.type === 'system' &&
@@ -184,7 +185,7 @@ export class AssistantController {
     const workspacePrompt = await this.agentPromptService.getWorkspacePrompt(
       workspace.id,
     );
-    if (workspacePrompt) {
+    if (workspacePrompt && !hasHistory) {
       const alreadyInjected = enrichedMessages.some(
         (message) =>
           message.type === 'system' &&
