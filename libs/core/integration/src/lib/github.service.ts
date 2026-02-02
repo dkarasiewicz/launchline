@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -208,7 +208,7 @@ export interface GitHubPRDetails extends GitHubPullRequestSummary {
 export interface GitHubIssueDetails extends GitHubIssueSummary {
   body?: string;
   labels?: string[];
-  comments?: Array<{ author: string; body: string }>;  
+  comments?: Array<{ author: string; body: string }>;
 }
 
 export interface GitHubCommitDetails extends GitHubCommitSummary {
@@ -239,16 +239,18 @@ export class GitHubService {
   private readonly clientId: string | undefined = this.configService.get(
     'integrations.github.clientId',
   );
-  private readonly clientSecret: string | undefined =
-    this.configService.get('integrations.github.clientSecret');
+  private readonly clientSecret: string | undefined = this.configService.get(
+    'integrations.github.clientSecret',
+  );
   private readonly appId: string | undefined = this.configService.get(
     'integrations.github.appId',
   );
   private readonly appSlug: string | undefined = this.configService.get(
     'integrations.github.appSlug',
   );
-  private readonly appPrivateKey: string | undefined =
-    this.configService.get('integrations.github.privateKey');
+  private readonly appPrivateKey: string | undefined = this.configService.get(
+    'integrations.github.privateKey',
+  );
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -268,19 +270,22 @@ export class GitHubService {
       throw new Error('GitHub integration is not configured');
     }
 
-    const response = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
+    const response = await fetch(
+      'https://github.com/login/oauth/access_token',
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          code,
+          redirect_uri: redirectUri,
+        }),
       },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        code,
-        redirect_uri: redirectUri,
-      }),
-    });
+    );
 
     if (!response.ok) {
       const error = await response.text();
@@ -302,13 +307,19 @@ export class GitHubService {
     };
   }
 
-  async getInstallation(installationId: string): Promise<GitHubInstallationSummary> {
+  async getInstallation(
+    installationId: string,
+  ): Promise<GitHubInstallationSummary> {
     const jwtToken = this.buildAppJwt();
     const data = await this.requestWithAuth<GitHubApiInstallation>(
       `https://api.github.com/app/installations/${installationId}`,
       jwtToken,
       { authScheme: 'Bearer' },
     );
+
+    if (!data.account) {
+      throw new BadRequestException('Integration not found');
+    }
 
     return {
       id: data.id,
@@ -317,7 +328,7 @@ export class GitHubService {
         login: data.account?.login,
         type: data.account?.type,
       },
-      repositorySelection: data.repository_selection,
+      repositorySelection: data.repository_selection ?? undefined,
     };
   }
 
@@ -336,7 +347,7 @@ export class GitHubService {
 
     return {
       token: data.token,
-      expiresAt: data.expires_at,
+      expiresAt: data.expires_at ?? undefined,
     };
   }
 
@@ -384,7 +395,10 @@ export class GitHubService {
     const url = new URL('https://api.github.com/user/repos');
     url.searchParams.set('per_page', String(limit));
     url.searchParams.set('sort', 'updated');
-    url.searchParams.set('affiliation', 'owner,collaborator,organization_member');
+    url.searchParams.set(
+      'affiliation',
+      'owner,collaborator,organization_member',
+    );
 
     const data = await this.request<GitHubApiRepository[]>(
       url.toString(),
@@ -405,9 +419,7 @@ export class GitHubService {
     options: { state?: string; limit?: number } = {},
   ): Promise<GitHubPullRequestSummary[]> {
     const limit = Math.min(options.limit ?? 10, 50);
-    const url = new URL(
-      `https://api.github.com/repos/${owner}/${repo}/pulls`,
-    );
+    const url = new URL(`https://api.github.com/repos/${owner}/${repo}/pulls`);
     url.searchParams.set('per_page', String(limit));
     url.searchParams.set('state', options.state || 'open');
     url.searchParams.set('sort', 'updated');
@@ -468,18 +480,20 @@ export class GitHubService {
     return {
       ...this.mapPullRequest(pr),
       body: pr.body || undefined,
-      additions: pr.additions,
-      deletions: pr.deletions,
-      changedFiles: pr.changed_files,
+      additions: pr.additions ?? undefined,
+      deletions: pr.deletions ?? undefined,
+      changedFiles: pr.changed_files ?? undefined,
       files,
       commits,
       labels: Array.isArray(pr.labels)
-        ? pr.labels.map((label: { name?: string }) => label.name).filter(Boolean)
+        ? (pr.labels
+            .map((label: { name?: string | null }) => label.name)
+            .filter(Boolean) as string[])
         : [],
       reviewers: Array.isArray(pr.requested_reviewers)
-        ? pr.requested_reviewers
-            .map((reviewer: { login?: string }) => reviewer.login)
-            .filter(Boolean)
+        ? (pr.requested_reviewers
+            .map((reviewer: { login?: string | null }) => reviewer.login)
+            .filter(Boolean) as string[])
         : [],
     };
   }
@@ -508,7 +522,7 @@ export class GitHubService {
       additions: file.additions,
       deletions: file.deletions,
       changes: file.changes,
-      patch: file.patch,
+      patch: file.patch ?? undefined,
     }));
   }
 
@@ -541,9 +555,7 @@ export class GitHubService {
     options: { state?: string; limit?: number } = {},
   ): Promise<GitHubIssueSummary[]> {
     const limit = Math.min(options.limit ?? 10, 50);
-    const url = new URL(
-      `https://api.github.com/repos/${owner}/${repo}/issues`,
-    );
+    const url = new URL(`https://api.github.com/repos/${owner}/${repo}/issues`);
     url.searchParams.set('per_page', String(limit));
     url.searchParams.set('state', options.state || 'open');
 
@@ -582,7 +594,9 @@ export class GitHubService {
       ...this.mapIssue(issue),
       body: issue.body || undefined,
       labels: Array.isArray(issue.labels)
-        ? issue.labels.map((label: { name?: string }) => label.name).filter(Boolean)
+        ? (issue.labels
+            .map((label: { name?: string | null }) => label.name)
+            .filter(Boolean) as string[])
         : [],
       comments,
     };
@@ -672,8 +686,8 @@ export class GitHubService {
 
     return {
       ...this.mapCommit(commit),
-      additions: commit.stats?.additions,
-      deletions: commit.stats?.deletions,
+      additions: commit.stats?.additions ?? undefined,
+      deletions: commit.stats?.deletions ?? undefined,
       files: Array.isArray(commit.files)
         ? commit.files.map((file) => ({
             filename: file.filename,
@@ -703,9 +717,7 @@ export class GitHubService {
       );
 
       if (Array.isArray(hooks)) {
-        const existing = hooks.find(
-          (hook) => hook?.config?.url === input.url,
-        );
+        const existing = hooks.find((hook) => hook?.config?.url === input.url);
         if (existing) {
           return;
         }
@@ -805,16 +817,17 @@ export class GitHubService {
 
     const fileSummary = details.files
       ?.slice(0, 8)
-      .map((file) =>
-        `- ${file.filename} (+${file.additions}/-${file.deletions})`,
+      .map(
+        (file) => `- ${file.filename} (+${file.additions}/-${file.deletions})`,
       )
       .join('\n');
 
     const patchSnippet = details.files
       ?.filter((file) => Boolean(file.patch))
       .slice(0, 3)
-      .map((file) =>
-        `File: ${file.filename}\n${this.truncate(file.patch || '', 800)}`,
+      .map(
+        (file) =>
+          `File: ${file.filename}\n${this.truncate(file.patch || '', 800)}`,
       )
       .join('\n\n');
 
@@ -846,13 +859,18 @@ export class GitHubService {
     const files = details.files || [];
     const fileSummary = files
       .slice(0, 6)
-      .map((file) => `- ${file.filename} (+${file.additions}/-${file.deletions})`)
+      .map(
+        (file) => `- ${file.filename} (+${file.additions}/-${file.deletions})`,
+      )
       .join('\n');
 
     const patchSnippet = files
       .filter((file) => Boolean(file.patch))
       .slice(0, 2)
-      .map((file) => `File: ${file.filename}\n${this.truncate(file.patch || '', 800)}`)
+      .map(
+        (file) =>
+          `File: ${file.filename}\n${this.truncate(file.patch || '', 800)}`,
+      )
       .join('\n\n');
 
     return [
