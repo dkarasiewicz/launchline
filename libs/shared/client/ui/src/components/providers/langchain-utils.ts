@@ -1,11 +1,10 @@
-import {
-  AIMessage,
-  HumanMessage,
-  RemoveMessage,
-  SystemMessage,
-  ToolMessage,
-} from '@langchain/langgraph-sdk';
+import { HumanMessage, RemoveMessage } from '@langchain/langgraph-sdk';
 import { SerializedConstructor } from '@langchain/core/load/serializable';
+import {
+  LangChainMessage,
+  LangChainToolCall,
+} from '@assistant-ui/react-langgraph';
+import { ReadonlyJSONObject } from 'assistant-stream/utils';
 
 type MessageType =
   | 'human'
@@ -36,13 +35,6 @@ interface OpenAIFunctionToolCall {
 }
 
 type RawToolCall = ToolCall | OpenAIFunctionToolCall | Record<string, unknown>;
-
-type LangChainMessage =
-  | HumanMessage
-  | AIMessage
-  | SystemMessage
-  | ToolMessage
-  | RemoveMessage;
 
 function isSerializedConstructor(x: unknown): x is SerializedConstructor {
   return (
@@ -87,9 +79,16 @@ function isOpenAIFunctionToolCall(
   );
 }
 
-function coerceToolCall(toolCall: RawToolCall): ToolCall | RawToolCall {
+function coerceToolCall(toolCall: RawToolCall): LangChainToolCall {
   if (isToolCall(toolCall)) {
-    return toolCall;
+    return {
+      id: toolCall.id,
+      name: toolCall.name,
+      args: toolCall.args as ReadonlyJSONObject,
+      partial_json: (toolCall as unknown as { partial_json?: string })[
+        'partial_json'
+      ],
+    };
   }
 
   if (isOpenAIFunctionToolCall(toolCall)) {
@@ -97,11 +96,13 @@ function coerceToolCall(toolCall: RawToolCall): ToolCall | RawToolCall {
       id: toolCall.id,
       args: JSON.parse(toolCall.function.arguments),
       name: toolCall.function.name,
-      type: 'tool_call',
+      partial_json: (toolCall.function as unknown as { partial_json?: string })[
+        'partial_json'
+      ],
     };
   }
 
-  return toolCall;
+  return toolCall as LangChainToolCall;
 }
 
 function extractMessageType(params: SerializedConstructor): {
@@ -143,7 +144,7 @@ function createHumanMessage(rest: Record<string, unknown>): HumanMessage {
   return { ...rest, type: 'human' } as HumanMessage;
 }
 
-function createAIMessage(rest: Record<string, unknown>): AIMessage {
+function createAIMessage(rest: Record<string, unknown>): LangChainMessage {
   const {
     tool_calls: rawToolCalls,
     tool_call_chunks: rawToolCallChunks,
@@ -201,23 +202,25 @@ function createAIMessage(rest: Record<string, unknown>): AIMessage {
   }
 
   if (!toolCallList) {
-    return { ...rest, type: 'ai' } as AIMessage;
+    return { ...rest, type: 'ai' } as LangChainMessage;
   }
 
-  const tool_calls = toolCallList.map(coerceToolCall) as ToolCall[];
+  const tool_calls = toolCallList.map(coerceToolCall) as LangChainToolCall[];
   return {
     ...other,
     type: 'ai',
     tool_calls,
     additional_kwargs,
-  } as AIMessage;
+  } as LangChainMessage;
 }
 
-function createSystemMessage(rest: Record<string, unknown>): SystemMessage {
-  return { ...rest, type: 'system' } as SystemMessage;
+function createSystemMessage(rest: Record<string, unknown>): LangChainMessage {
+  return { ...rest, type: 'system' } as LangChainMessage;
 }
 
-function createDeveloperMessage(rest: Record<string, unknown>): SystemMessage {
+function createDeveloperMessage(
+  rest: Record<string, unknown>,
+): LangChainMessage {
   const additionalKwargs =
     (rest.additional_kwargs as Record<string, unknown>) ?? {};
   return {
@@ -227,17 +230,18 @@ function createDeveloperMessage(rest: Record<string, unknown>): SystemMessage {
       ...additionalKwargs,
       __openai_role__: 'developer',
     },
-  } as unknown as SystemMessage;
+  } as unknown as LangChainMessage;
 }
 
-function createToolMessage(rest: Record<string, unknown>): ToolMessage {
+function createToolMessage(rest: Record<string, unknown>): LangChainMessage {
   return {
     ...rest,
+    status: rest.status as 'error' | 'success',
     type: 'tool',
     content: rest.content as string,
     tool_call_id: rest.tool_call_id as string,
     name: rest.name as string,
-  } as ToolMessage;
+  };
 }
 
 function createRemoveMessage(rest: Record<string, unknown>): RemoveMessage {
@@ -276,7 +280,7 @@ export function constructMessageFromParams(
 
     case 'remove':
       if ('id' in rest && typeof rest.id === 'string') {
-        return createRemoveMessage(rest);
+        return createRemoveMessage(rest) as unknown as LangChainMessage;
       }
       break;
   }

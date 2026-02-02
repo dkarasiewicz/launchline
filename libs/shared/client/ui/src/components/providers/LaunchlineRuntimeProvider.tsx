@@ -85,7 +85,8 @@ async function* streamMessages({
 
           if (
             !parsedMessage ||
-            (parsedMessage.type !== 'ai' && parsedMessage.type !== 'assistant')
+            (parsedMessage.type !== 'ai' &&
+              parsedMessage.type !== ('assistant' as string))
           ) {
             continue;
           }
@@ -108,13 +109,13 @@ async function* streamMessages({
           }
 
           const parsedMessages = value.data
-            .map((message) =>
+            .map((message: SerializedConstructor) =>
               parseMessage(
                 message as SerializedConstructor | Record<string, unknown>,
               ),
             )
             .filter(
-              (message): message is LangChainMessage =>
+              (message: LangChainMessage): message is LangChainMessage =>
                 !!message &&
                 ['ai', 'tool', 'human', 'system'].includes(message.type),
             );
