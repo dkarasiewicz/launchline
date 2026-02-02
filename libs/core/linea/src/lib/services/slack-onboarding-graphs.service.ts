@@ -206,6 +206,39 @@ export class SlackOnboardingGraphsService {
             );
             recentMessages.set(channel.id, messages);
           } catch (err) {
+            const errorMessage =
+              err instanceof Error ? err.message : String(err);
+            const notInChannel =
+              errorMessage.includes('not_in_channel') ||
+              (typeof err === 'object' &&
+                err !== null &&
+                'data' in err &&
+                typeof (err as { data?: { error?: string } }).data?.error ===
+                  'string' &&
+                (err as { data?: { error?: string } }).data?.error ===
+                  'not_in_channel');
+
+            if (notInChannel && !channel.isPrivate) {
+              try {
+                await this.slackService.joinChannel(
+                  state.slackToken,
+                  channel.id,
+                );
+                const messages = await this.slackService.fetchRecentMessages(
+                  state.slackToken,
+                  channel.id,
+                  30,
+                );
+                recentMessages.set(channel.id, messages);
+                continue;
+              } catch (joinErr) {
+                this.logger.warn(
+                  { err: joinErr, channelId: channel.id },
+                  'Failed to join Slack channel for history fetch',
+                );
+              }
+            }
+
             this.logger.warn(
               { err, channelId: channel.id },
               'Failed to fetch Slack channel history',

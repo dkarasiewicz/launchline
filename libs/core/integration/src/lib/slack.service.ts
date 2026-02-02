@@ -131,6 +131,20 @@ export class SlackService {
       }));
   }
 
+  async joinChannel(token: string, channelId: string): Promise<void> {
+    const client = this.slackBoltService.getClient();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response: any = await client.conversations.join({
+      token,
+      channel: channelId,
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || 'Slack conversations.join failed');
+    }
+  }
+
   async postMessage(
     token: string,
     channel: string,

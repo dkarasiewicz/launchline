@@ -943,18 +943,9 @@ const LLMObservationTypeValues = [
 export type LLMObservationType = (typeof LLMObservationTypeValues)[number];
 
 const LLMObservationTypeSchema = z.enum(LLMObservationTypeValues);
-const LLMObservationTypeFieldSchema = z
-  .string()
-  .refine(
-    (value): value is LLMObservationType =>
-      LLMObservationTypeValues.includes(value as LLMObservationType),
-    {
-      message: `Must be one of: ${LLMObservationTypeValues.join(', ')}`,
-    },
-  );
 
 export const LLMObservationSchema = z.object({
-  type: LLMObservationTypeFieldSchema.describe('Type of observation'),
+  type: LLMObservationTypeSchema.describe('Type of observation'),
   title: z.string().describe('Short title for the observation'),
   observation: z.string().describe('Detailed observation content'),
   importance: z.number().min(0).max(1).describe('Importance score 0-1'),
