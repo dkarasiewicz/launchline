@@ -65,3 +65,4 @@ export {
 
 // Sandbox tools
 export { RunSandboxCommandToolUI } from './sandbox/sandbox';
+export { RunSandboxWorkflowToolUI } from './sandbox/workflow';

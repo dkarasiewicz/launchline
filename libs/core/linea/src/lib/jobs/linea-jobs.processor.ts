@@ -107,6 +107,7 @@ export class LineaJobsProcessor extends WorkerHost {
           workspaceId,
           userId,
         },
+        recursionLimit: 100,
       },
     )) as { messages?: Array<{ content?: unknown }> } | undefined;
 
@@ -230,6 +231,7 @@ export class LineaJobsProcessor extends WorkerHost {
           workspaceId,
           userId,
         },
+        recursionLimit: 100,
       },
     )) as { messages?: Array<{ content?: unknown }> } | undefined;
 

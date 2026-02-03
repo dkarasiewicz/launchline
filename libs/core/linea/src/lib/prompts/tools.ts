@@ -280,6 +280,31 @@ User: "Pull the main headline from example.com"
 Call: command="python - <<'PY'\nimport requests, bs4\nhtml=requests.get('https://example.com').text\nsoup=bs4.BeautifulSoup(html,'html.parser')\nprint(soup.h1.text)\nPY"
 </example>`,
 
+  runSandboxWorkflow: `Run a multi-step workflow inside a single sandbox session.
+
+## What This Does
+- Spins up one container and runs steps sequentially via exec
+- Keeps /workspace state between steps (and optionally between runs)
+- Returns per-step output plus a final summary
+
+## When to Use This Tool
+Use this when you need to:
+- Execute a sequence of commands that depend on shared state
+- Install dependencies and then run scripts/tests in the same sandbox
+- Automate a repeatable workflow and capture it as a skill
+
+## Guardrails
+- Create a short plan first (list steps) before calling this tool
+- Keep steps minimal and deterministic
+- Avoid account creation or sensitive actions without explicit approval
+
+## Examples
+
+<example>
+User: "Check a page, then take a screenshot"
+Call: goal="Capture homepage screenshot" steps=[{name="Install deps", command="pnpm add playwright"}, {name="Run script", command="node scripts/snap.js"}]
+</example>`,
+
   generateProjectUpdate: `Generate a comprehensive project update.
 
 ## What This Does

@@ -3,7 +3,11 @@ import { type StructuredToolInterface, tool } from '@langchain/core/tools';
 import { RunnableConfig } from '@langchain/core/runnables';
 import { TavilySearch } from '@langchain/tavily';
 import { Command } from '@langchain/langgraph';
-import { HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
+import {
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { MemoryService } from './memory.service';
 import { LinearSkillsFactory } from './linear-skills.factory';
@@ -41,6 +45,7 @@ import {
   ResolveIdentityInputSchema,
   ScheduleStandupDigestInputSchema,
   RunSandboxCommandInputSchema,
+  RunSandboxWorkflowInputSchema,
   ScheduleCalendarEventInputSchema,
   ScheduleTaskInputSchema,
   SaveMemoryInputSchema,
@@ -172,7 +177,10 @@ export class ToolsFactory {
   }
 
   private createInboxTools(): StructuredToolInterface[] {
-    return [this.createGetInboxItemsTool(), this.createGetWorkspaceStatusTool()];
+    return [
+      this.createGetInboxItemsTool(),
+      this.createGetWorkspaceStatusTool(),
+    ];
   }
 
   private createActionTools(): StructuredToolInterface[] {
@@ -214,6 +222,7 @@ export class ToolsFactory {
       this.createScheduleTaskTool(),
       this.createScheduleStandupDigestTool(),
       this.createRunSandboxCommandTool(),
+      this.createRunSandboxWorkflowTool(),
     ];
   }
 
@@ -254,6 +263,203 @@ export class ToolsFactory {
         schema: RunSandboxCommandInputSchema,
       },
     );
+  }
+
+  private createRunSandboxWorkflowTool(): StructuredToolInterface {
+    const sandboxService = this.sandboxService;
+    const memoryService = this.memoryService;
+    const logger = this.logger;
+
+    return tool(
+      async ({ goal, steps, timeoutMs, image, persistWorkspace }, config) => {
+        const workspaceId = getWorkspaceId(config);
+        const userId = getUserId(config);
+        const correlationId = getToolCallId(config);
+
+        try {
+          if (this.requiresSandboxWorkflowApproval(goal, steps)) {
+            return JSON.stringify({
+              goal,
+              steps: [],
+              success: false,
+              exitCode: null,
+              durationMs: 0,
+              truncated: false,
+              summary:
+                'Approval required for sensitive workflow. Confirm before running.',
+              skillSaved: false,
+              skillSaveError: null,
+              skillTitle: null,
+              requiresApproval: true,
+            });
+          }
+
+          const result = await sandboxService.runWorkflow({
+            workspaceId,
+            goal,
+            steps,
+            timeoutMs,
+            image,
+            persistWorkspace,
+          });
+
+          let skillSaved = false;
+          let skillSaveError: string | null = null;
+          let skillTitle: string | null = null;
+
+          if (result.success) {
+            const skill = this.buildSandboxWorkflowSkill({
+              goal,
+              steps,
+              image,
+              persistWorkspace,
+            });
+            skillTitle = skill.title;
+            try {
+              await memoryService.saveMemory(
+                {
+                  workspaceId,
+                  userId,
+                  correlationId,
+                },
+                {
+                  namespace: 'workspace',
+                  category: 'skill',
+                  content: skill.content,
+                  summary: `Sandbox workflow: ${skill.title}`,
+                  importance: 0.6,
+                  confidence: 0.85,
+                  sourceEventIds: [],
+                  relatedEntityIds: [],
+                  relatedMemoryIds: [],
+                  entityRefs: {},
+                },
+              );
+              skillSaved = true;
+            } catch (error) {
+              skillSaveError =
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to save workflow skill';
+              logger.error(
+                { err: error, workspaceId, goal },
+                'Failed to save sandbox workflow skill',
+              );
+            }
+          }
+
+          return JSON.stringify({
+            ...result,
+            skillSaved,
+            skillSaveError,
+            skillTitle,
+            requiresApproval: false,
+          });
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, goal },
+            'Failed to run sandbox workflow',
+          );
+
+          return JSON.stringify({
+            goal,
+            steps: [],
+            success: false,
+            exitCode: null,
+            durationMs: 0,
+            truncated: false,
+            summary:
+              error instanceof Error ? error.message : 'Sandbox workflow error',
+            skillSaved: false,
+            skillSaveError: null,
+            skillTitle: null,
+            requiresApproval: false,
+          });
+        }
+      },
+      {
+        name: 'run_sandbox_workflow',
+        description: TOOL_DESCRIPTIONS.runSandboxWorkflow,
+        schema: RunSandboxWorkflowInputSchema,
+      },
+    );
+  }
+
+  private buildSandboxWorkflowSkill(input: {
+    goal: string;
+    steps: Array<{ name: string; command: string }>;
+    image?: string;
+    persistWorkspace?: boolean;
+  }): { title: string; content: string } {
+    const trimmedGoal = input.goal.trim();
+    const title = trimmedGoal.length > 0 ? trimmedGoal : 'Sandbox Workflow';
+    const persistWorkspace = input.persistWorkspace ?? true;
+    const lines: string[] = [];
+
+    lines.push(`# ${title}`);
+    lines.push('');
+    lines.push(`Goal: ${trimmedGoal || title}`);
+    lines.push('');
+    lines.push('## Preconditions');
+    lines.push(
+      `- Sandbox image: ${input.image ? input.image : 'Default sandbox image'}`,
+    );
+    lines.push(
+      `- Workspace persistence: ${persistWorkspace ? 'enabled' : 'disabled'}`,
+    );
+    lines.push(
+      '- Required env/tokens: Provide any tokens referenced in steps.',
+    );
+    lines.push('');
+    lines.push('## Steps');
+
+    input.steps.forEach((step, index) => {
+      lines.push(`${index + 1}. ${step.name}`);
+      lines.push('```bash');
+      lines.push(step.command);
+      lines.push('```');
+    });
+
+    lines.push('');
+    lines.push('## Verification');
+    lines.push('- Confirm each step exits with code 0.');
+    lines.push('- Verify expected files/output in /workspace.');
+    lines.push('');
+    lines.push('## Troubleshooting');
+    lines.push('- Re-run the failing step alone to inspect output.');
+    lines.push('- If installs fail, check network/registry access.');
+
+    return { title, content: lines.join('\n') };
+  }
+
+  private requiresSandboxWorkflowApproval(
+    goal: string,
+    steps: Array<{ name: string; command: string }>,
+  ): boolean {
+    if (process.env['LINEA_SANDBOX_WORKFLOW_REQUIRE_APPROVAL'] !== 'true') {
+      return false;
+    }
+
+    const keywords = (
+      process.env['LINEA_SANDBOX_WORKFLOW_APPROVAL_KEYWORDS'] ||
+      'create account,sign up,signup,register,billing,payment,checkout,delete,remove,drop'
+    )
+      .split(',')
+      .map((keyword) => keyword.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (keywords.length === 0) {
+      return false;
+    }
+
+    const haystack = [
+      goal,
+      ...steps.map((step) => `${step.name} ${step.command}`),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return keywords.some((keyword) => haystack.includes(keyword));
   }
 
   private createScheduleTaskTool(): StructuredToolInterface {
@@ -524,10 +730,7 @@ export class ToolsFactory {
 
           return teamInsightsService.summarizeTeam(graph, focus);
         } catch (error) {
-          logger.error(
-            { err: error, workspaceId },
-            'Get team insights failed',
-          );
+          logger.error({ err: error, workspaceId }, 'Get team insights failed');
           return `Error generating team insights: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
@@ -545,9 +748,8 @@ export class ToolsFactory {
     return tool(
       async (_, config) => {
         const workspaceId = getWorkspaceId(config);
-        const record = await promptService.getWorkspacePromptRecord(
-          workspaceId,
-        );
+        const record =
+          await promptService.getWorkspacePromptRecord(workspaceId);
 
         if (!record) {
           return 'No workspace instructions found yet.';
@@ -987,10 +1189,7 @@ Include: highlights, risks/blockers, next steps.`,
         const userId = getUserId(config);
         const timestamp = new Date().toISOString();
 
-        logger.debug(
-          { workspaceId, userId, timestamp },
-          'Think tool invoked',
-        );
+        logger.debug({ workspaceId, userId, timestamp }, 'Think tool invoked');
         logger.debug({ workspaceId, thought }, 'Think tool thought');
 
         return `Thought recorded at ${timestamp}. Continue with your analysis.`;
@@ -1327,7 +1526,16 @@ Use this tool after each search to analyze results and plan next steps systemati
 
     return tool(
       async (
-        { summary, description, location, start, end, timeZone, attendees, calendarId },
+        {
+          summary,
+          description,
+          location,
+          start,
+          end,
+          timeZone,
+          attendees,
+          calendarId,
+        },
         config,
       ) => {
         const workspaceId = getWorkspaceId(config);
@@ -1690,6 +1898,7 @@ Summary:`;
 
   private createGetGitHubPullRequestsTool(): StructuredToolInterface {
     const githubService = this.githubService;
+    const logger = this.logger;
 
     return tool(
       async ({ repo, state = 'open', limit = 10 }, config) => {
@@ -1708,19 +1917,34 @@ Summary:`;
           return 'GitHub integration is not connected.';
         }
 
-        const prs = await githubService.listRepoPullRequests(
-          token,
-          repoInfo.owner,
-          repoInfo.repo,
-          { state, limit },
-        );
+        try {
+          const prs = await githubService.listRepoPullRequests(
+            token,
+            repoInfo.owner,
+            repoInfo.repo,
+            { state, limit },
+          );
 
-        return JSON.stringify({
-          type: 'github.pr.list',
-          repo,
-          state,
-          items: prs,
-        });
+          return JSON.stringify({
+            type: 'github.pr.list',
+            repo,
+            state,
+            items: prs,
+          });
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, repo, state, limit },
+            'GitHub pull request list failed',
+          );
+
+          return JSON.stringify({
+            type: 'github.pr.list',
+            repo,
+            state,
+            items: [],
+            error: this.formatGitHubError(error, repo),
+          });
+        }
       },
       {
         name: 'get_github_pull_requests',
@@ -1732,6 +1956,7 @@ Summary:`;
 
   private createGetGitHubPullRequestDetailsTool(): StructuredToolInterface {
     const githubService = this.githubService;
+    const logger = this.logger;
 
     return tool(
       async ({ repo, number }, config) => {
@@ -1750,21 +1975,37 @@ Summary:`;
           return 'GitHub integration is not connected.';
         }
 
-        const details = await githubService.getPullRequestDetails(
-          token,
-          repoInfo.owner,
-          repoInfo.repo,
-          number,
-        );
-        const summary = githubService.buildPrSummary(details);
+        try {
+          const details = await githubService.getPullRequestDetails(
+            token,
+            repoInfo.owner,
+            repoInfo.repo,
+            number,
+          );
+          const summary = githubService.buildPrSummary(details);
 
-        return JSON.stringify({
-          type: 'github.pr.details',
-          repo,
-          pr: details,
-          summary: summary.summary,
-          prContext: summary.prContext,
-        });
+          return JSON.stringify({
+            type: 'github.pr.details',
+            repo,
+            pr: details,
+            summary: summary.summary,
+            prContext: summary.prContext,
+          });
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, repo, number },
+            'GitHub pull request details failed',
+          );
+
+          return JSON.stringify({
+            type: 'github.pr.details',
+            repo,
+            pr: null,
+            summary: null,
+            prContext: null,
+            error: this.formatGitHubError(error, repo),
+          });
+        }
       },
       {
         name: 'get_github_pull_request_details',
@@ -1776,6 +2017,7 @@ Summary:`;
 
   private createGetGitHubIssuesTool(): StructuredToolInterface {
     const githubService = this.githubService;
+    const logger = this.logger;
 
     return tool(
       async ({ repo, state = 'open', limit = 10 }, config) => {
@@ -1794,19 +2036,34 @@ Summary:`;
           return 'GitHub integration is not connected.';
         }
 
-        const issues = await githubService.listRepoIssues(
-          token,
-          repoInfo.owner,
-          repoInfo.repo,
-          { state, limit },
-        );
+        try {
+          const issues = await githubService.listRepoIssues(
+            token,
+            repoInfo.owner,
+            repoInfo.repo,
+            { state, limit },
+          );
 
-        return JSON.stringify({
-          type: 'github.issue.list',
-          repo,
-          state,
-          items: issues,
-        });
+          return JSON.stringify({
+            type: 'github.issue.list',
+            repo,
+            state,
+            items: issues,
+          });
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, repo, state, limit },
+            'GitHub issue list failed',
+          );
+
+          return JSON.stringify({
+            type: 'github.issue.list',
+            repo,
+            state,
+            items: [],
+            error: this.formatGitHubError(error, repo),
+          });
+        }
       },
       {
         name: 'get_github_issues',
@@ -1818,6 +2075,7 @@ Summary:`;
 
   private createSearchGitHubIssuesTool(): StructuredToolInterface {
     const githubService = this.githubService;
+    const logger = this.logger;
 
     return tool(
       async ({ query, repo, limit = 10 }, config) => {
@@ -1836,17 +2094,31 @@ Summary:`;
           return 'GitHub integration is not connected.';
         }
 
-        const issues = await githubService.searchIssues(
-          token,
-          searchQuery,
-          limit,
-        );
+        try {
+          const issues = await githubService.searchIssues(
+            token,
+            searchQuery,
+            limit,
+          );
 
-        return JSON.stringify({
-          type: 'github.issue.search',
-          query: searchQuery,
-          items: issues,
-        });
+          return JSON.stringify({
+            type: 'github.issue.search',
+            query: searchQuery,
+            items: issues,
+          });
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, query: searchQuery, limit },
+            'GitHub issue search failed',
+          );
+
+          return JSON.stringify({
+            type: 'github.issue.search',
+            query: searchQuery,
+            items: [],
+            error: this.formatGitHubError(error, searchQuery),
+          });
+        }
       },
       {
         name: 'search_github_issues',
@@ -1858,6 +2130,7 @@ Summary:`;
 
   private createGetGitHubCommitsTool(): StructuredToolInterface {
     const githubService = this.githubService;
+    const logger = this.logger;
 
     return tool(
       async ({ repo, branch, limit = 10 }, config) => {
@@ -1876,19 +2149,34 @@ Summary:`;
           return 'GitHub integration is not connected.';
         }
 
-        const commits = await githubService.listRepoCommits(
-          token,
-          repoInfo.owner,
-          repoInfo.repo,
-          { sha: branch, limit },
-        );
+        try {
+          const commits = await githubService.listRepoCommits(
+            token,
+            repoInfo.owner,
+            repoInfo.repo,
+            { sha: branch, limit },
+          );
 
-        return JSON.stringify({
-          type: 'github.commit.list',
-          repo,
-          branch: branch || null,
-          items: commits,
-        });
+          return JSON.stringify({
+            type: 'github.commit.list',
+            repo,
+            branch: branch || null,
+            items: commits,
+          });
+        } catch (error) {
+          logger.error(
+            { err: error, workspaceId, repo, branch, limit },
+            'GitHub commit list failed',
+          );
+
+          return JSON.stringify({
+            type: 'github.commit.list',
+            repo,
+            branch: branch || null,
+            items: [],
+            error: this.formatGitHubError(error, repo),
+          });
+        }
       },
       {
         name: 'get_github_commits',
@@ -1896,6 +2184,23 @@ Summary:`;
         schema: GetGitHubCommitsInputSchema,
       },
     );
+  }
+
+  private formatGitHubError(error: unknown, context: string): string {
+    const message =
+      error instanceof Error ? error.message : String(error || 'Unknown error');
+
+    if (message.includes('404')) {
+      return `GitHub repo not found or access denied (${context}). Check the repo slug and GitHub installation access.`;
+    }
+    if (message.includes('401')) {
+      return `GitHub authentication failed (${context}). Reconnect the GitHub integration.`;
+    }
+    if (message.includes('403')) {
+      return `GitHub access forbidden (${context}). Ensure the token has repo access.`;
+    }
+
+    return `GitHub request failed (${context}): ${message}`;
   }
 
   private formatGitHubIssuePreview(
@@ -1933,7 +2238,10 @@ Summary:`;
           //@ts-expect-error
           return await tavilySearch.invoke({ query });
         } catch (error) {
-          logger.error({ err: error, query, maxResults }, 'Internet search failed');
+          logger.error(
+            { err: error, query, maxResults },
+            'Internet search failed',
+          );
           return `Error searching the web: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },

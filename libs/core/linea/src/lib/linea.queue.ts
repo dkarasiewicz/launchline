@@ -480,7 +480,11 @@ export class LineaQueue {
 
       if (accessToken) {
         const repo = webhookPayload.repository as
-          | { name?: string; owner?: { login?: string }; default_branch?: string }
+          | {
+              name?: string;
+              owner?: { login?: string };
+              default_branch?: string;
+            }
           | undefined;
         const owner = repo?.owner?.login;
         const repoName = repo?.name;
@@ -517,9 +521,7 @@ export class LineaQueue {
         }
 
         if (eventType === 'issues' && owner && repoName) {
-          const issue = webhookPayload.issue as
-            | { number?: number }
-            | undefined;
+          const issue = webhookPayload.issue as { number?: number } | undefined;
           if (issue?.number) {
             const details = await this.githubService.getIssueDetails(
               accessToken,
@@ -665,6 +667,7 @@ export class LineaQueue {
           workspaceId: payload.workspaceId,
           userId,
         },
+        recursionLimit: 100,
       },
     )) as { messages?: Array<{ content?: unknown }> } | undefined;
 

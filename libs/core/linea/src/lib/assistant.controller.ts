@@ -185,6 +185,7 @@ export class AssistantController {
           userId: currentUser.userId,
         },
         streamMode: ['messages', 'updates'],
+        recursionLimit: 200,
         // subgraphs works but for some reason not typed?
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-expect-error

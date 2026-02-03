@@ -631,6 +631,30 @@ export const RunSandboxCommandInputSchema = z.object({
   image: z.string().optional().describe('Optional Docker image override'),
 });
 
+export const RunSandboxWorkflowStepSchema = z.object({
+  name: z.string().min(1).describe('Step name'),
+  command: z.string().min(1).describe('Command to execute for this step'),
+});
+
+export const RunSandboxWorkflowInputSchema = z.object({
+  goal: z.string().min(1).describe('High-level workflow goal'),
+  steps: z
+    .array(RunSandboxWorkflowStepSchema)
+    .min(1)
+    .describe('Sequential steps to execute in the same container'),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .optional()
+    .describe('Workflow timeout in milliseconds (defaults to configured max)'),
+  image: z.string().optional().describe('Optional Docker image override'),
+  persistWorkspace: z
+    .boolean()
+    .optional()
+    .describe('Persist /workspace between runs (default true)'),
+});
+
 export const GenerateProjectUpdateInputSchema = z.object({
   projectId: z.string().optional().describe('Optional project identifier'),
   timeRange: z.string().optional().describe('Time range for the update'),
