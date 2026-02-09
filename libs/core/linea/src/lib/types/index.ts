@@ -638,9 +638,21 @@ export const RunSandboxWorkflowStepSchema = z.object({
 
 export const RunSandboxWorkflowInputSchema = z.object({
   goal: z.string().min(1).describe('High-level workflow goal'),
+  sourceSkill: z
+    .string()
+    .optional()
+    .describe(
+      'If the workflow is based on an existing skill, provide its name/slug',
+    ),
+  saveSkill: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether to save the workflow as a skill (defaults to true unless sourceSkill is provided)',
+    ),
   steps: z
     .array(RunSandboxWorkflowStepSchema)
-    .min(1)
+    .min(0)
     .describe('Sequential steps to execute in the same container'),
   timeoutMs: z
     .number()
@@ -653,6 +665,18 @@ export const RunSandboxWorkflowInputSchema = z.object({
     .boolean()
     .optional()
     .describe('Persist /workspace between runs (default true)'),
+  sessionId: z
+    .string()
+    .optional()
+    .describe('Reuse an existing sandbox session id'),
+  keepAlive: z
+    .boolean()
+    .optional()
+    .describe('Keep the sandbox session alive after running steps'),
+  closeSession: z
+    .boolean()
+    .optional()
+    .describe('Close a running sandbox session (requires sessionId)'),
 });
 
 export const GenerateProjectUpdateInputSchema = z.object({

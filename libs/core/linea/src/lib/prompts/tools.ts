@@ -286,23 +286,41 @@ Call: command="python - <<'PY'\nimport requests, bs4\nhtml=requests.get('https:/
 - Spins up one container and runs steps sequentially via exec
 - Keeps /workspace state between steps (and optionally between runs)
 - Returns per-step output plus a final summary
+- Default image includes common tooling; pass \`image\` to swap in a different toolchain
+- Supports interactive loops by keeping the session alive (\`keepAlive: true\`) and reusing it via \`sessionId\`
 
 ## When to Use This Tool
 Use this when you need to:
 - Execute a sequence of commands that depend on shared state
 - Install dependencies and then run scripts/tests in the same sandbox
 - Automate a repeatable workflow and capture it as a skill
+- Iterate in a loop by reusing the same sandbox session
+
+## Skill Reuse Rules
+- If you are running steps from an existing skill, pass \`sourceSkill\` and do **not** save a new skill.
+- Only set \`saveSkill: true\` when explicitly asked to update or extend that skill.
 
 ## Guardrails
 - Create a short plan first (list steps) before calling this tool
 - Keep steps minimal and deterministic
 - Avoid account creation or sensitive actions without explicit approval
+- Close long-running sessions when finished (\`closeSession: true\`)
 
 ## Examples
 
 <example>
 User: "Check a page, then take a screenshot"
 Call: goal="Capture homepage screenshot" steps=[{name="Install deps", command="pnpm add playwright"}, {name="Run script", command="node scripts/snap.js"}]
+</example>
+
+<example>
+User: "Keep the sandbox open so we can run follow-up commands"
+Call: goal="Start sandbox session" steps=[{name="Warmup", command="node -v"}] keepAlive=true
+</example>
+
+<example>
+User: "Run another command in the same sandbox"
+Call: goal="Continue sandbox session" steps=[{name="List files", command="ls -la"}] sessionId="..."
 </example>`,
 
   generateProjectUpdate: `Generate a comprehensive project update.

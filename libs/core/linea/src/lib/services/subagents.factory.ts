@@ -6,7 +6,11 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { createDeepAgent, type CompiledSubAgent } from 'deepagents';
+import {
+  createDeepAgent,
+  type BackendProtocol,
+  type CompiledSubAgent,
+} from 'deepagents';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   LINEA_MODEL_FAST,
@@ -17,6 +21,8 @@ import {
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { Runnable } from '@langchain/core/runnables';
 import { SUBAGENT_PROMPTS } from '../prompts';
+import { SandboxService } from './sandbox.service';
+import { LineaSandboxBackend } from './linea-sandbox-backend';
 
 type SubagentDefinition = {
   name: string;
@@ -24,6 +30,7 @@ type SubagentDefinition = {
   prompt: string;
   model: BaseChatModel;
   toolNames?: string[];
+  backend?: BackendProtocol;
 };
 
 @Injectable()
@@ -37,44 +44,72 @@ export class SubagentsFactory {
     private readonly modelReasoning: BaseChatModel,
     @Inject(LINEA_TOOLS)
     private readonly tools: StructuredToolInterface[],
+    private readonly sandboxService: SandboxService,
   ) {}
 
-  createAllSubagents(): CompiledSubAgent[] {
+  createAllSubagents(options?: { workspaceId?: string }): CompiledSubAgent[] {
+    const workspaceId = options?.workspaceId;
+    const sandboxBackend = workspaceId
+      ? new LineaSandboxBackend({
+          workspaceId,
+          sandboxService: this.sandboxService,
+        })
+      : undefined;
+
     return [
       this.createSubagent({
-        name: 'summarizer',
+        name: 'distiller',
         description:
-          'Summarizes long content, threads, and discussions into concise points. Use when you need to condense large amounts of text.',
-        prompt: SUBAGENT_PROMPTS.summarizer,
+          'Compresses long content into a high-signal brief with decisions, blockers, and next actions.',
+        prompt: SUBAGENT_PROMPTS.distiller,
         model: this.modelFast,
       }),
       this.createSubagent({
-        name: 'researcher',
+        name: 'context_scout',
         description:
-          'Deep research across team memories and external sources. Use when you need thorough investigation of historical context, decisions, or patterns.',
-        prompt: SUBAGENT_PROMPTS.researcher,
+          'Rapidly gathers relevant memories, inbox items, and context across namespaces.',
+        prompt: SUBAGENT_PROMPTS.contextScout,
         model: this.modelAnalysis,
         toolNames: [
           'search_memories',
           'get_blockers',
           'get_decisions',
+          'get_inbox_items',
+          'get_workspace_status',
+          'get_team_insights',
           'internet_search',
         ],
       }),
       this.createSubagent({
-        name: 'analyst',
+        name: 'strategist',
         description:
-          'Performs complex multi-factor analysis of situations, decisions, or risks. Uses advanced reasoning for nuanced assessments. Use for important decisions or complex trade-offs.',
-        prompt: SUBAGENT_PROMPTS.analyst,
+          'Analyzes complex situations and produces prioritized plans with risks and mitigations.',
+        prompt: SUBAGENT_PROMPTS.strategist,
         model: this.modelReasoning,
       }),
       this.createSubagent({
-        name: 'reporter',
+        name: 'automation_designer',
         description:
-          'Generates polished reports and updates for different audiences. Use when creating project updates, stakeholder communications, or standup notes.',
-        prompt: SUBAGENT_PROMPTS.reporter,
+          'Designs sandbox-ready workflows and scripts for safe automation.',
+        prompt: SUBAGENT_PROMPTS.automationDesigner,
         model: this.modelAnalysis,
+      }),
+      this.createSubagent({
+        name: 'communications_editor',
+        description:
+          'Drafts crisp, audience-appropriate updates and requests.',
+        prompt: SUBAGENT_PROMPTS.communicationsEditor,
+        model: this.modelFast,
         toolNames: ['search_memories', 'get_blockers', 'get_inbox_items'],
+      }),
+      this.createSubagent({
+        name: 'sandbox_runner',
+        description:
+          'Executes sandbox workflows and reports step results.',
+        prompt: SUBAGENT_PROMPTS.sandboxRunner,
+        model: this.modelFast,
+        toolNames: ['run_sandbox_workflow'],
+        backend: sandboxBackend,
       }),
     ];
   }
@@ -86,6 +121,7 @@ export class SubagentsFactory {
         ? this.selectTools(definition.toolNames)
         : undefined,
       systemPrompt: definition.prompt,
+      backend: definition.backend,
     });
 
     return {

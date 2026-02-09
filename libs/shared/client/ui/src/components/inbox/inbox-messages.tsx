@@ -26,7 +26,7 @@ export function InboxUserMessage() {
     >
       <div className="flex justify-end gap-2">
         <div className="aui-user-message-content wrap-break-word max-w-[75%] rounded-2xl rounded-tr-sm bg-primary text-primary-foreground px-4 py-2.5 shadow-sm">
-          <MessagePrimitive.Parts />
+          <MessagePrimitive.Unstable_PartsGroupedByParentId components={{}} />
         </div>
         <div className="aui-user-message-avatar flex items-start justify-end">
           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
@@ -58,7 +58,7 @@ export function InboxAssistantMessage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="aui-assistant-message-content wrap-break-word rounded-2xl rounded-tl-sm bg-card border border-border/50 px-4 py-2.5 shadow-sm text-foreground leading-relaxed">
-              <MessagePrimitive.Parts />
+              <MessagePrimitive.Unstable_PartsGroupedByParentId components={{}} />
             </div>
             <div className="aui-assistant-message-footer mt-1 flex">
               <InboxAssistantActionBar />

@@ -50,6 +50,12 @@ const DELETE_INTEGRATION_MUTATION = gql`
   }
 `;
 
+const REONBOARD_INTEGRATION_MUTATION = gql`
+  mutation ReonboardIntegration($input: ReonboardIntegrationInput!) {
+    reonboardIntegration(input: $input)
+  }
+`;
+
 const LINEA_DATA_QUERY = gql`
   query LineaData {
     lineaWorkspacePrompt {
@@ -129,6 +135,12 @@ const UPSERT_LINEA_SKILL_MUTATION = gql`
       content
       updatedAt
     }
+  }
+`;
+
+const DELETE_LINEA_SKILL_MUTATION = gql`
+  mutation DeleteLineaSkill($id: String!) {
+    deleteLineaSkill(id: $id)
   }
 `;
 
@@ -264,6 +276,7 @@ const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
 ];
 
 const normalize = (value?: string) => (value || '').toLowerCase();
+const REONBOARDABLE_INTEGRATIONS = new Set(['slack', 'linear', 'github']);
 
 export default function SettingsClient() {
   const searchParams = useSearchParams();
@@ -271,6 +284,9 @@ export default function SettingsClient() {
     'integrations' | 'preferences' | 'data'
   >('integrations');
   const [pendingDisconnectId, setPendingDisconnectId] = useState<string | null>(
+    null,
+  );
+  const [pendingReonboardId, setPendingReonboardId] = useState<string | null>(
     null,
   );
   const [promptDraft, setPromptDraft] = useState('');
@@ -298,6 +314,9 @@ export default function SettingsClient() {
   const [deleteIntegration, { loading: deleting }] = useMutation(
     DELETE_INTEGRATION_MUTATION,
   );
+  const [reonboardIntegration, { loading: reonboarding }] = useMutation(
+    REONBOARD_INTEGRATION_MUTATION,
+  );
 
   const {
     data: lineaData,
@@ -323,6 +342,9 @@ export default function SettingsClient() {
       content: string;
     };
   }>(UPSERT_LINEA_SKILL_MUTATION);
+  const [deleteLineaSkill, { loading: deletingSkill }] = useMutation<{
+    deleteLineaSkill: boolean;
+  }>(DELETE_LINEA_SKILL_MUTATION);
 
   const {
     data: heartbeatData,
@@ -527,6 +549,30 @@ export default function SettingsClient() {
     }
   };
 
+  const handleReonboard = async (integrationId: string) => {
+    const confirmed = window.confirm(
+      'Re-onboard will clear the onboarding memories for this integration and rebuild them. Continue?',
+    );
+    if (!confirmed) return;
+
+    setPendingReonboardId(integrationId);
+    try {
+      await reonboardIntegration({
+        variables: {
+          input: { integrationId, clearData: true },
+        },
+      });
+      await refetch();
+      if (activeTab === 'data') {
+        await refetchLinea();
+      }
+    } catch (error) {
+      console.error('Failed to re-onboard integration:', error);
+    } finally {
+      setPendingReonboardId(null);
+    }
+  };
+
   const handleSavePrompt = async () => {
     if (!promptDraft.trim()) {
       return;
@@ -586,6 +632,33 @@ export default function SettingsClient() {
       await refetchLinea();
     } catch (error) {
       console.error('Failed to save skill:', error);
+    }
+  };
+
+  const handleDeleteSkill = async () => {
+    if (!selectedSkillId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Delete this skill? This cannot be undone.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteLineaSkill({
+        variables: { id: selectedSkillId },
+      });
+
+      setSelectedSkillId(null);
+      setSkillName('');
+      setSkillContent('');
+      setSkillDirty(false);
+      await refetchLinea();
+    } catch (error) {
+      console.error('Failed to delete skill:', error);
     }
   };
 
@@ -765,6 +838,26 @@ export default function SettingsClient() {
                                 <ExternalLink className="w-4 h-4 mr-2" />
                                 Open
                               </Button>
+                              {REONBOARDABLE_INTEGRATIONS.has(
+                                definition.type,
+                              ) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={
+                                    reonboarding ||
+                                    pendingReonboardId === integration.id
+                                  }
+                                  onClick={() =>
+                                    handleReonboard(integration.id)
+                                  }
+                                >
+                                  <Sparkles className="w-4 h-4 mr-2" />
+                                  {pendingReonboardId === integration.id
+                                    ? 'Re-onboarding'
+                                    : 'Re-onboard'}
+                                </Button>
+                              )}
                               <Button
                                 variant="destructive"
                                 size="sm"
@@ -1248,6 +1341,14 @@ export default function SettingsClient() {
                             onClick={handleNewSkill}
                           >
                             New
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={!selectedSkillId || deletingSkill}
+                            onClick={handleDeleteSkill}
+                          >
+                            Delete
                           </Button>
                           <Button
                             size="sm"

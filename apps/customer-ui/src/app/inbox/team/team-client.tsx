@@ -1,14 +1,21 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import {
+  type ForwardRefExoticComponent,
+  type RefAttributes,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { gql } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
 import { Button } from '@launchline/ui/components/ui/button';
 import { LogoIcon } from '@launchline/ui/components/logo';
 import { cn } from '@launchline/ui/lib/utils';
 import {
-  AlertTriangle,
   CircleDot,
   Inbox,
   Link2,
@@ -16,20 +23,21 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  type Node,
-  type Edge,
-  type NodeProps,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
-import { Pie, Bar } from '@visx/shape';
-import { Group } from '@visx/group';
-import { scaleBand, scaleLinear } from '@visx/scale';
-import { Text } from '@visx/text';
-import { LinearGradient } from '@visx/gradient';
+import type { ForceGraphMethods, ForceGraphProps } from 'react-force-graph-3d';
+
+type ForceGraphComponent = ForwardRefExoticComponent<
+  ForceGraphProps<ForceNode, ForceLink> &
+    RefAttributes<ForceGraphMethods<ForceNode, ForceLink>>
+>;
+
+const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+      Loading map...
+    </div>
+  ),
+}) as ForceGraphComponent;
 
 const TEAM_GRAPH_QUERY = gql`
   query LineaTeamGraph {
@@ -89,125 +97,144 @@ type GraphInsight = {
   level: string;
 };
 
-type TeamNodeData = {
+type ForceNode = {
+  id: string;
   label: string;
-  kind: string;
+  type: string;
   metrics?: GraphNode['metrics'];
-  selected?: boolean;
+  connections: number;
+  color: string;
+  x?: number;
+  y?: number;
+  z?: number;
 };
 
-const nodeStyles: Record<
-  string,
-  { background: string; border: string; text: string }
-> = {
-  person: {
-    background: 'bg-sky-500/10',
-    border: 'border-sky-500/40',
-    text: 'text-sky-200',
-  },
-  team: {
-    background: 'bg-emerald-500/10',
-    border: 'border-emerald-500/40',
-    text: 'text-emerald-200',
-  },
-  project: {
-    background: 'bg-amber-500/10',
-    border: 'border-amber-500/40',
-    text: 'text-amber-200',
-  },
-  ticket: {
-    background: 'bg-indigo-500/10',
-    border: 'border-indigo-500/40',
-    text: 'text-indigo-200',
-  },
-  pr: {
-    background: 'bg-fuchsia-500/10',
-    border: 'border-fuchsia-500/40',
-    text: 'text-fuchsia-200',
-  },
+type ForceLink = {
+  source: string | ForceNode;
+  target: string | ForceNode;
+  type: string;
+  weight?: number;
 };
 
-const edgeColors: Record<string, string> = {
-  assignment: '#38bdf8',
-  project: '#f59e0b',
-  team: '#22c55e',
-  blocker: '#ef4444',
-  decision: '#eab308',
-  collaboration: '#94a3b8',
-};
-
-const miniMapColors: Record<string, string> = {
+const nodeColors: Record<string, string> = {
   person: '#38bdf8',
   team: '#22c55e',
   project: '#f59e0b',
   ticket: '#6366f1',
   pr: '#d946ef',
+  decision: '#eab308',
   other: '#94a3b8',
+};
+
+const primaryTypes = ['person', 'project', 'ticket'] as const;
+const primaryTypeLabels: Record<(typeof primaryTypes)[number], string> = {
+  person: 'People',
+  project: 'Projects',
+  ticket: 'Tasks',
+};
+const nodeTypeLabels: Record<string, string> = {
+  person: 'Person',
+  project: 'Project',
+  ticket: 'Task',
+  team: 'Team',
+  pr: 'PR',
+  decision: 'Decision',
+  other: 'Other',
+};
+
+const edgeStyles: Record<
+  string,
+  { color: string; width: number; dash?: number[]; opacity: number }
+> = {
+  assignment: { color: '#38bdf8', width: 1.4, opacity: 0.7 },
+  project: { color: '#f59e0b', width: 1.2, dash: [6, 6], opacity: 0.6 },
+  team: { color: '#22c55e', width: 1.2, dash: [2, 5], opacity: 0.55 },
+  blocker: { color: '#ef4444', width: 2.4, opacity: 0.9 },
+  decision: { color: '#eab308', width: 1.8, dash: [1, 4], opacity: 0.75 },
+  collaboration: { color: '#94a3b8', width: 1.1, dash: [4, 6], opacity: 0.4 },
+  contributes: { color: '#a855f7', width: 1.2, dash: [3, 5], opacity: 0.55 },
+  repo_pr: { color: '#ec4899', width: 1.4, opacity: 0.6 },
+  author: { color: '#f472b6', width: 1.2, opacity: 0.6 },
 };
 
 function formatMetric(value?: number) {
   return typeof value === 'number' ? value : 0;
 }
 
-function TeamNode({ data }: NodeProps<TeamNodeData>) {
-  const style = nodeStyles[data.kind] || {
-    background: 'bg-muted/40',
-    border: 'border-border/50',
-    text: 'text-muted-foreground',
-  };
-  const sizeClass =
-    data.kind === 'person' || data.kind === 'project'
-      ? 'px-4 py-3 min-w-[150px]'
-      : 'px-3 py-2 min-w-[130px]';
-  const emphasisClass = data.selected
-    ? 'ring-2 ring-primary/60 shadow-lg'
-    : '';
-  const connections = formatMetric(data.metrics?.connections);
+function formatTypeLabel(type: string, plural = false) {
+  if (plural && type in primaryTypeLabels) {
+    return primaryTypeLabels[type as (typeof primaryTypes)[number]];
+  }
+  return nodeTypeLabels[type] || type;
+}
 
-  return (
-    <div
-      className={cn(
-        'rounded-2xl border shadow-sm backdrop-blur-md max-w-[200px]',
-        sizeClass,
-        emphasisClass,
-        style.background,
-        style.border,
-      )}
-    >
-      <p className={cn('text-[10px] uppercase tracking-widest', style.text)}>
-        {data.kind}
-      </p>
-      <p className="text-sm font-semibold text-foreground truncate">
-        {data.label}
-      </p>
-      {connections > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          {connections} signal links
-        </p>
-      )}
-    </div>
+const relationLabels: Record<string, string> = {
+  assignment: 'Assignments',
+  project: 'Projects',
+  team: 'Team ties',
+  blocker: 'Blockers',
+  decision: 'Decisions',
+  collaboration: 'Collaboration',
+  contributes: 'Contributions',
+  repo_pr: 'PRs',
+  author: 'Authorship',
+};
+
+const linkLegendItems = [
+  { type: 'assignment', label: 'Assignment' },
+  { type: 'project', label: 'Project' },
+  { type: 'blocker', label: 'Blocker' },
+  { type: 'decision', label: 'Decision' },
+];
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function withAlpha(color: string, alpha: number) {
+  if (!color.startsWith('#')) {
+    return color;
+  }
+  const hex = color.replace('#', '');
+  if (hex.length < 6) {
+    return color;
+  }
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getLinkEndpointId(endpoint: ForceLink['source']) {
+  if (typeof endpoint === 'string') return endpoint;
+  if (typeof endpoint === 'number') return (endpoint as number).toString();
+  return endpoint?.id?.toString() ?? '';
+}
+
+function getIssueFlags(node: {
+  type: string;
+  metrics?: GraphNode['metrics'];
+  connections?: number;
+}) {
+  const blockers = formatMetric(node.metrics?.blockers);
+  const decisions = formatMetric(node.metrics?.decisions);
+  const connections = formatMetric(
+    node.connections ?? node.metrics?.connections,
   );
+  const isSilo = node.type === 'person' && connections <= 2;
+  const isBlockerHotspot = blockers >= 2;
+  const isDecisionHeavy = decisions >= 3;
+  return {
+    isSilo,
+    isBlockerHotspot,
+    isDecisionHeavy,
+    blockers,
+    decisions,
+    connections,
+  };
 }
 
-function layoutColumn(
-  items: GraphNode[],
-  x: number,
-  top: number,
-  height: number,
-  minGap = 52,
-) {
-  const count = Math.max(items.length, 1);
-  const gap = Math.max(minGap, height / (count + 1));
-  return items.map((item, index) => ({
-    ...item,
-    position: {
-      x,
-      y: top + gap * (index + 1),
-    },
-  }));
-}
-
-function TeamGraphFlow({
+function TeamGraph3D({
   nodes,
   edges,
   selectedId,
@@ -218,89 +245,113 @@ function TeamGraphFlow({
   selectedId?: string | null;
   onSelect?: (nodeId: string | null) => void;
 }) {
-  const { flowNodes, flowEdges } = useMemo(() => {
-    const people = nodes.filter((node) => node.type === 'person');
-    const initiatives = nodes.filter((node) =>
-      ['project', 'team'].includes(node.type),
+  const graphRef = useRef<ForceGraphMethods<ForceNode, ForceLink>>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 980, height: 520 });
+  const [hoveredNode, setHoveredNode] = useState<ForceNode | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      const rect = container.getBoundingClientRect();
+      setDimensions({
+        width: Math.max(320, Math.floor(rect.width)),
+        height: Math.max(320, Math.floor(rect.height)),
+      });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const scene = useMemo(() => {
+    const maxNodes = 240;
+    const maxEdges = 600;
+
+    const sortedNodes = [...nodes].sort(
+      (a, b) =>
+        formatMetric(b.metrics?.connections) -
+        formatMetric(a.metrics?.connections),
     );
-    const work = nodes.filter((node) => ['ticket', 'pr'].includes(node.type));
-    const other = nodes.filter(
-      (node) =>
-        !['person', 'project', 'team', 'ticket', 'pr'].includes(node.type),
-    );
-
-    const sortByConnections = (list: GraphNode[]) =>
-      [...list].sort(
-        (a, b) =>
-          formatMetric(b.metrics?.connections) -
-          formatMetric(a.metrics?.connections),
-      );
-
-    const visiblePeople = sortByConnections(people).slice(0, 12);
-    const visibleInitiatives = sortByConnections(initiatives).slice(0, 10);
-    const visibleWork = sortByConnections(work).slice(0, 10);
-    const visibleOther = sortByConnections(other).slice(0, 6);
-
-    const visibleNodes = [
-      ...visiblePeople,
-      ...visibleInitiatives,
-      ...visibleWork,
-      ...visibleOther,
-    ];
-
+    const visibleNodes = sortedNodes.slice(0, maxNodes);
     const visibleIds = new Set(visibleNodes.map((node) => node.id));
     const visibleEdges = edges.filter(
       (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
     );
-
-    const width = 980;
-    const height = 520;
-    const layout = [
-      ...layoutColumn(visiblePeople, 120, 20, height - 40, 64),
-      ...layoutColumn(visibleInitiatives, 380, 40, height - 80, 64),
-      ...layoutColumn(visibleWork, 660, 20, height - 40, 52),
-      ...layoutColumn(visibleOther, 880, 60, height - 120, 52),
-    ];
-
-    const flowNodes: Node<TeamNodeData>[] = layout.map((node) => ({
-      id: node.id,
-      type: 'teamNode',
-      data: {
-        label: node.label,
-        kind: node.type,
-        metrics: node.metrics,
-        selected: node.id === selectedId,
-      },
-      position: node.position,
-    }));
-
     const weightedEdges = [...visibleEdges].sort(
       (a, b) => (b.weight ?? 1) - (a.weight ?? 1),
     );
-    const maxEdges = Math.max(36, visibleNodes.length * 2);
     const trimmedEdges = weightedEdges.slice(0, maxEdges);
 
-    const flowEdges: Edge[] = trimmedEdges.map((edge) => {
-      const weight = edge.weight ?? 1;
-      const strokeWidth = Math.min(2.4, 0.8 + weight * 0.4);
-      const opacity = Math.min(0.85, 0.35 + weight * 0.12);
-
+    const baseNodes: ForceNode[] = visibleNodes.map((node) => {
+      const connections = formatMetric(node.metrics?.connections);
       return {
-        id: `${edge.source}-${edge.target}-${edge.type}`,
-        source: edge.source,
-        target: edge.target,
-        type: 'smoothstep',
-        animated: edge.type === 'blocker',
-        style: {
-          stroke: edgeColors[edge.type] || 'rgba(148, 163, 184, 0.4)',
-          strokeWidth,
-          opacity,
-        },
+        id: node.id,
+        label: node.label,
+        type: node.type,
+        metrics: node.metrics,
+        connections,
+        color: nodeColors[node.type] || nodeColors.other,
       };
     });
 
-    return { flowNodes, flowEdges };
-  }, [nodes, edges, selectedId]);
+    const baseLinks: ForceLink[] = trimmedEdges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      type: edge.type,
+      weight: edge.weight,
+    }));
+
+    return {
+      graphData: {
+        nodes: baseNodes,
+        links: baseLinks,
+      },
+    };
+  }, [nodes, edges]);
+
+  const activeId = hoveredNode?.id ?? selectedId ?? null;
+  const activeConnectedIds = useMemo(() => {
+    if (!activeId) return null;
+    const connected = new Set<string>();
+    scene.graphData.links.forEach((edge) => {
+      const sourceId = getLinkEndpointId(edge.source);
+      const targetId = getLinkEndpointId(edge.target);
+      if (sourceId === activeId || targetId === activeId) {
+        connected.add(sourceId);
+        connected.add(targetId);
+      }
+    });
+    connected.add(activeId);
+    return connected;
+  }, [activeId, scene.graphData.links]);
+
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const linkForce = graph.d3Force('link') as
+      | { distance?: (val: (link: ForceLink) => number) => void }
+      | undefined;
+    linkForce?.distance?.((link: ForceLink) =>
+      link.type === 'blocker' ? 130 : 90,
+    );
+    const chargeForce = graph.d3Force('charge') as
+      | { strength?: (val: number) => void }
+      | undefined;
+    chargeForce?.strength?.(-140);
+    graph.d3ReheatSimulation();
+    const timeout = setTimeout(() => {
+      graph.zoomToFit(700, 26);
+    }, 200);
+    return () => clearTimeout(timeout);
+  }, [
+    scene.graphData.nodes.length,
+    scene.graphData.links.length,
+    dimensions.width,
+    dimensions.height,
+  ]);
 
   if (!nodes.length) {
     return (
@@ -310,172 +361,86 @@ function TeamGraphFlow({
     );
   }
 
+  const linkColor = (link: ForceLink) => {
+    const style = edgeStyles[link.type] || { color: '#94a3b8', opacity: 0.4 };
+    const sourceId = getLinkEndpointId(link.source);
+    const targetId = getLinkEndpointId(link.target);
+    const highlighted =
+      activeId && (sourceId === activeId || targetId === activeId);
+    if (activeId && !highlighted) {
+      return withAlpha(style.color, hoveredNode ? 0.12 : 0.08);
+    }
+    return withAlpha(style.color, style.opacity ?? 0.5);
+  };
+
+  const nodeColor = (node: ForceNode) => {
+    const baseColor = node.color;
+    if (!activeId) {
+      return withAlpha(baseColor, 0.86);
+    }
+    if (activeConnectedIds?.has(node.id)) {
+      return withAlpha(baseColor, 0.95);
+    }
+    return withAlpha(baseColor, hoveredNode ? 0.22 : 0.16);
+  };
+
   return (
-    <div className="h-[520px] rounded-2xl border border-border/50 bg-card/40">
-      <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}
-        nodeTypes={{ teamNode: TeamNode }}
-        fitView
-        nodesDraggable={false}
-        nodesConnectable={false}
-        onNodeClick={(_, node) => onSelect?.(node.id)}
-        onPaneClick={() => onSelect?.(null)}
-      >
-        <Background gap={28} size={1} color="rgba(148, 163, 184, 0.2)" />
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={(node) => {
-            const kind = (node.data as TeamNodeData)?.kind;
-            return miniMapColors[kind] || miniMapColors.other;
+    <div
+      ref={containerRef}
+      className="relative h-[520px] w-full overflow-hidden rounded-2xl border border-border/50 bg-card/40"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_55%),radial-gradient(circle_at_20%_80%,_rgba(234,179,8,0.12),_transparent_45%)]" />
+      <div className="relative z-10 h-full w-full">
+        <ForceGraph3D
+          ref={graphRef}
+          graphData={scene.graphData}
+          width={dimensions.width}
+          height={dimensions.height}
+          backgroundColor="rgba(15, 23, 42, 0)"
+          showNavInfo={false}
+          enableNodeDrag={false}
+          numDimensions={2}
+          nodeRelSize={3}
+          nodeVal={(node: ForceNode) =>
+            clamp(Math.sqrt(node.connections + 1) * 0.9, 1.4, 4.2)
+          }
+          nodeColor={nodeColor}
+          nodeLabel={(node: ForceNode) =>
+            `${node.label} · ${nodeTypeLabels[node.type] || node.type} · ${
+              node.connections
+            } links`
+          }
+          linkColor={linkColor}
+          linkWidth={(link: ForceLink) => {
+            const style = edgeStyles[link.type] || { width: 1 };
+            const weightBoost = clamp((link.weight ?? 1) * 0.15, 0, 1.6);
+            const sourceId = getLinkEndpointId(link.source);
+            const targetId = getLinkEndpointId(link.target);
+            const highlighted =
+              selectedId &&
+              (sourceId === selectedId || targetId === selectedId);
+            return style.width + weightBoost + (highlighted ? 0.6 : 0);
           }}
-        />
-        <Controls />
-      </ReactFlow>
-    </div>
-  );
-}
-
-function SignalMixChart({ data }: { data: { label: string; value: number; color: string }[] }) {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
-  const width = 320;
-  const height = 220;
-  const radius = Math.min(width, height) / 2 - 16;
-  const innerRadius = radius * 0.62;
-
-  if (total === 0) {
-    return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
-        Not enough signals yet.
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-center">
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-        <LinearGradient
-          id="mix-gradient"
-          from="#0f172a"
-          to="#1f2937"
-          vertical={false}
-        />
-        <rect width={width} height={height} fill="url(#mix-gradient)" rx={24} />
-        <Group top={height / 2} left={width / 2}>
-          <Pie
-            data={data}
-            pieValue={(item) => item.value}
-            outerRadius={radius}
-            innerRadius={innerRadius}
-            padAngle={0.02}
-          >
-            {(pie) =>
-              pie.arcs.map((arc) => (
-                <g key={arc.data.label}>
-                  <path d={pie.path(arc) || ''} fill={arc.data.color} />
-                </g>
-              ))
+          linkCurvature={0.18}
+          showPointerCursor={(obj) => Boolean(obj && 'id' in obj)}
+          onNodeHover={(node: ForceNode | null) => {
+            if (!node) {
+              setHoveredNode(null);
+              return;
             }
-          </Pie>
-          <Text
-            textAnchor="middle"
-            verticalAnchor="middle"
-            fill="#e2e8f0"
-            fontSize={16}
-            fontWeight={600}
-          >
-            Signal mix
-          </Text>
-        </Group>
-      </svg>
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-        {data.map((item) => (
-          <div key={item.label} className="flex items-center gap-2">
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ background: item.color }}
-            />
-            {item.label} · {item.value}
-          </div>
-        ))}
+            setHoveredNode(node);
+          }}
+          onNodeClick={(node: ForceNode) => {
+            onSelect?.(node.id);
+          }}
+          onBackgroundClick={() => onSelect?.(null)}
+        />
+      </div>
+
+      <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-border/40 bg-background/70 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-sm">
+        Drag to pan · Scroll to zoom · Click to lock
       </div>
     </div>
-  );
-}
-
-function ConnectorBarChart({ data }: { data: { label: string; value: number }[] }) {
-  const width = 360;
-  const height = 220;
-  const margin = { top: 16, right: 16, bottom: 24, left: 90 };
-
-  if (!data.length) {
-    return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
-        No teammate signals yet.
-      </div>
-    );
-  }
-
-  const maxValue = Math.max(...data.map((item) => item.value), 1);
-  const xScale = scaleLinear({
-    domain: [0, maxValue],
-    range: [0, width - margin.left - margin.right],
-  });
-  const yScale = scaleBand({
-    domain: data.map((item) => item.label),
-    range: [0, height - margin.top - margin.bottom],
-    padding: 0.25,
-  });
-
-  return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-      <LinearGradient
-        id="bars-gradient"
-        from="#38bdf8"
-        to="#22c55e"
-        vertical={false}
-      />
-      <Group left={margin.left} top={margin.top}>
-        {data.map((item) => {
-          const barWidth = xScale(item.value) ?? 0;
-          const barHeight = yScale.bandwidth();
-          const y = yScale(item.label) ?? 0;
-
-          return (
-            <Group key={item.label}>
-              <Bar
-                x={0}
-                y={y}
-                width={barWidth}
-                height={barHeight}
-                fill="url(#bars-gradient)"
-                rx={6}
-              />
-              <Text
-                x={-12}
-                y={y + barHeight / 2}
-                textAnchor="end"
-                verticalAnchor="middle"
-                fill="#cbd5f5"
-                fontSize={11}
-              >
-                {item.label}
-              </Text>
-              <Text
-                x={barWidth + 8}
-                y={y + barHeight / 2}
-                verticalAnchor="middle"
-                fill="#94a3b8"
-                fontSize={10}
-              >
-                {item.value}
-              </Text>
-            </Group>
-          );
-        })}
-      </Group>
-    </svg>
   );
 }
 
@@ -494,10 +459,67 @@ export default function TeamClient() {
   const edges = data?.lineaTeamGraph?.edges ?? [];
   const insights = data?.lineaTeamGraph?.insights ?? [];
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [activeTypes, setActiveTypes] = useState({
+    person: true,
+    project: true,
+    ticket: true,
+    other: false,
+  });
+
+  const otherTypes = useMemo(() => {
+    const types = new Set(nodes.map((node) => node.type));
+    return Array.from(types).filter(
+      (type) => !primaryTypes.includes(type as (typeof primaryTypes)[number]),
+    );
+  }, [nodes]);
+
+  const visibleNodes = useMemo(
+    () =>
+      nodes.filter((node) => {
+        if (primaryTypes.includes(node.type as (typeof primaryTypes)[number])) {
+          return activeTypes[node.type as (typeof primaryTypes)[number]];
+        }
+        return activeTypes.other;
+      }),
+    [nodes, activeTypes],
+  );
+
+  const visibleEdges = useMemo(() => {
+    const visibleIds = new Set(visibleNodes.map((node) => node.id));
+    return edges.filter(
+      (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
+    );
+  }, [edges, visibleNodes]);
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    const stillVisible = visibleNodes.some(
+      (node) => node.id === selectedNodeId,
+    );
+    if (!stillVisible) {
+      setSelectedNodeId(null);
+    }
+  }, [selectedNodeId, visibleNodes]);
+
+  const entityCounts = useMemo(() => {
+    const counts = { person: 0, project: 0, ticket: 0, other: 0 };
+    nodes.forEach((node) => {
+      if (node.type === 'person') counts.person += 1;
+      else if (node.type === 'project') counts.project += 1;
+      else if (node.type === 'ticket') counts.ticket += 1;
+      else counts.other += 1;
+    });
+    return counts;
+  }, [nodes]);
+
+  const nodeLookup = useMemo(
+    () => new Map(visibleNodes.map((node) => [node.id, node])),
+    [visibleNodes],
+  );
 
   const people = useMemo(
-    () => nodes.filter((node) => node.type === 'person'),
-    [nodes],
+    () => visibleNodes.filter((node) => node.type === 'person'),
+    [visibleNodes],
   );
 
   const topConnectors = useMemo(
@@ -512,62 +534,29 @@ export default function TeamClient() {
     [people],
   );
 
-  const signalMix = useMemo(() => {
-    const totals = people.reduce(
-      (acc, person) => {
-        acc.tickets += formatMetric(person.metrics?.tickets);
-        acc.prs += formatMetric(person.metrics?.prs);
-        acc.projects += formatMetric(person.metrics?.projects);
-        acc.blockers += formatMetric(person.metrics?.blockers);
-        acc.decisions += formatMetric(person.metrics?.decisions);
-        return acc;
-      },
-      {
-        tickets: 0,
-        prs: 0,
-        projects: 0,
-        blockers: 0,
-        decisions: 0,
-      },
-    );
-
-    return [
-      { label: 'Tickets', value: totals.tickets, color: '#38bdf8' },
-      { label: 'PRs', value: totals.prs, color: '#f97316' },
-      { label: 'Projects', value: totals.projects, color: '#22c55e' },
-      { label: 'Blockers', value: totals.blockers, color: '#ef4444' },
-      { label: 'Decisions', value: totals.decisions, color: '#eab308' },
-    ].filter((item) => item.value > 0);
-  }, [people]);
-
-  const connectorBars = useMemo(
-    () =>
-      topConnectors.map((person) => ({
-        label: person.label,
-        value: formatMetric(person.metrics?.connections),
-      })),
-    [topConnectors],
-  );
-
   const selectedNode = useMemo(
-    () => nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [nodes, selectedNodeId],
+    () => visibleNodes.find((node) => node.id === selectedNodeId) ?? null,
+    [visibleNodes, selectedNodeId],
   );
+
+  const selectedConnectionEdges = useMemo(() => {
+    if (!selectedNode) return [];
+    return visibleEdges.filter(
+      (edge) =>
+        edge.source === selectedNode.id || edge.target === selectedNode.id,
+    );
+  }, [selectedNode, visibleEdges]);
 
   const selectedConnections = useMemo(() => {
     if (!selectedNode) {
       return [];
     }
 
-    const connectedEdges = edges.filter(
-      (edge) => edge.source === selectedNode.id || edge.target === selectedNode.id,
-    );
-
-    return connectedEdges
+    return selectedConnectionEdges
       .map((edge) => {
         const counterpartId =
           edge.source === selectedNode.id ? edge.target : edge.source;
-        const counterpart = nodes.find((node) => node.id === counterpartId);
+        const counterpart = nodeLookup.get(counterpartId);
         return {
           id: counterpartId,
           label: counterpart?.label || counterpartId,
@@ -576,9 +565,99 @@ export default function TeamClient() {
           relation: edge.type,
         };
       })
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 8);
-  }, [edges, nodes, selectedNode]);
+      .sort((a, b) => b.weight - a.weight);
+  }, [nodeLookup, selectedConnectionEdges, selectedNode]);
+
+  const selectedConnectionsPreview = useMemo(
+    () => selectedConnections.slice(0, 8),
+    [selectedConnections],
+  );
+
+  const selectedRelations = useMemo(() => {
+    if (!selectedNode) return [];
+    const counts = new Map<string, number>();
+    selectedConnectionEdges.forEach((edge) => {
+      counts.set(edge.type, (counts.get(edge.type) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([relation, count]) => ({
+        relation,
+        label: relationLabels[relation] || relation,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+  }, [selectedConnectionEdges, selectedNode]);
+
+  const selectedConnectionTypes = useMemo(() => {
+    if (!selectedNode) return [];
+    const counts = new Map<string, number>();
+    selectedConnections.forEach((connection) => {
+      counts.set(connection.type, (counts.get(connection.type) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([type, count]) => ({
+        type,
+        label: formatTypeLabel(type, true),
+        count,
+        color: nodeColors[type] || nodeColors.other,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [selectedConnections, selectedNode]);
+
+  const selectedHighlights = useMemo(() => {
+    if (!selectedNode) return [];
+    const notes: string[] = [];
+    const issue = getIssueFlags({
+      type: selectedNode.type,
+      metrics: selectedNode.metrics,
+      connections: formatMetric(selectedNode.metrics?.connections),
+    });
+    const prs = formatMetric(selectedNode.metrics?.prs);
+    const tickets = formatMetric(selectedNode.metrics?.tickets);
+
+    if (issue.blockers >= 2) {
+      notes.push(`Blocker hotspot: ${issue.blockers} blockers tied here.`);
+    }
+    if (issue.connections <= 2) {
+      notes.push(`Silo risk: only ${issue.connections} direct links.`);
+    }
+    if (issue.decisions >= 3) {
+      notes.push(`Decision-heavy node (${issue.decisions}).`);
+    }
+    if (prs >= 4 && tickets <= 1) {
+      notes.push(`Code-heavy signal: ${prs} PRs with few tickets.`);
+    }
+
+    if (selectedRelations.length > 0) {
+      const headline = selectedRelations
+        .map((relation) => `${relation.label} (${relation.count})`)
+        .join(', ');
+      notes.push(`Top link types: ${headline}.`);
+    }
+
+    if (selectedConnections.length > 0) {
+      const strongest = selectedConnections
+        .slice(0, 2)
+        .map((connection) => connection.label)
+        .join(' · ');
+      notes.push(`Strongest links: ${strongest}.`);
+    }
+
+    if (!notes.length) {
+      notes.push('Links look balanced. No obvious risk flags detected.');
+    }
+
+    return notes.slice(0, 4);
+  }, [selectedNode, selectedRelations, selectedConnections]);
+
+  const filterButtonClass = (active: boolean) =>
+    cn(
+      'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] transition',
+      active
+        ? 'border-transparent bg-foreground/10 text-foreground'
+        : 'border-border/50 text-muted-foreground hover:text-foreground',
+    );
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -625,8 +704,9 @@ export default function TeamClient() {
                 Collaboration graph
               </h1>
               <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-                Linear anchors the ground truth. Slack, decisions, and
-                standups layer the human context on top of the work graph.
+                Track how people, projects, and tasks connect. Filter the
+                network to keep the story focused and inspect any node for
+                relationship detail.
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => void refetch()}>
@@ -635,16 +715,95 @@ export default function TeamClient() {
           </header>
 
           <div className="grid gap-6 xl:grid-cols-[2.2fr,1fr]">
-            <div className="rounded-2xl border border-border/50 bg-card/30 p-4">
-              <div className="flex items-center justify-between mb-4">
+            <div className="min-w-0 rounded-2xl border border-border/50 bg-card/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Link2 className="w-4 h-4" />
                   <span className="text-xs uppercase tracking-widest">
-                    Network view
+                    Link map
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {nodes.length} nodes • {edges.length} links
+                  Showing {visibleNodes.length} nodes • {visibleEdges.length}{' '}
+                  links
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {primaryTypes.map((type) => {
+                  const count = entityCounts[type];
+                  const active = activeTypes[type];
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() =>
+                        setActiveTypes((prev) => ({
+                          ...prev,
+                          [type]: !prev[type],
+                        }))
+                      }
+                      className={cn(
+                        filterButtonClass(active),
+                        'disabled:pointer-events-none disabled:opacity-40',
+                      )}
+                      disabled={count === 0}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ background: nodeColors[type] }}
+                      />
+                      {primaryTypeLabels[type]}
+                      <span className="text-[10px] text-muted-foreground/70">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+                {otherTypes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveTypes((prev) => ({
+                        ...prev,
+                        other: !prev.other,
+                      }))
+                    }
+                    className={cn(
+                      filterButtonClass(activeTypes.other),
+                      'disabled:pointer-events-none disabled:opacity-40',
+                    )}
+                    disabled={entityCounts.other === 0}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: nodeColors.other }}
+                    />
+                    Other
+                    <span className="text-[10px] text-muted-foreground/70">
+                      {entityCounts.other}
+                    </span>
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground mb-4">
+                {linkLegendItems.map((item) => {
+                  const style = edgeStyles[item.type];
+                  return (
+                    <div key={item.type} className="flex items-center gap-2">
+                      <span
+                        className="h-px w-6"
+                        style={{
+                          borderTopWidth: 2,
+                          borderTopStyle: style?.dash ? 'dashed' : 'solid',
+                          borderTopColor: style?.color ?? '#94a3b8',
+                        }}
+                      />
+                      {item.label}
+                    </div>
+                  );
+                })}
+                <span className="text-muted-foreground/70">
+                  Thickness = strength
                 </span>
               </div>
               {loading ? (
@@ -655,89 +814,180 @@ export default function TeamClient() {
                 <div className="flex h-[520px] items-center justify-center text-sm text-destructive">
                   Failed to load collaboration map. Refresh to try again.
                 </div>
+              ) : visibleNodes.length === 0 ? (
+                <div className="flex h-[520px] items-center justify-center text-sm text-muted-foreground">
+                  No nodes match the current filters.
+                </div>
               ) : (
-                <TeamGraphFlow
-                  nodes={nodes}
-                  edges={edges}
+                <TeamGraph3D
+                  nodes={visibleNodes}
+                  edges={visibleEdges}
                   selectedId={selectedNodeId}
                   onSelect={setSelectedNodeId}
                 />
               )}
             </div>
 
-            <div className="rounded-2xl border border-border/50 bg-card/30 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Users className="w-4 h-4" />
-                  <span className="text-xs uppercase tracking-widest">
-                    Selected node
-                  </span>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border/50 bg-card/30 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Users className="w-4 h-4" />
+                    <span className="text-xs uppercase tracking-widest">
+                      Node details
+                    </span>
+                  </div>
+                  {selectedNode && (
+                    <span className="text-xs text-muted-foreground">
+                      {formatTypeLabel(selectedNode.type)}
+                    </span>
+                  )}
                 </div>
-                {selectedNode && (
-                  <span className="text-xs text-muted-foreground capitalize">
-                    {selectedNode.type}
-                  </span>
-                )}
-              </div>
-              {!selectedNode ? (
-                <p className="text-sm text-muted-foreground">
-                  Click a node to inspect signals, dependencies, and ownership.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {selectedNode.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatMetric(selectedNode.metrics?.connections)} signal
-                      links • {formatMetric(selectedNode.metrics?.tickets)} tickets •{' '}
-                      {formatMetric(selectedNode.metrics?.prs)} PRs
-                    </p>
+                {!selectedNode ? (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>Click a node to inspect connections and ownership.</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <span>People: {entityCounts.person}</span>
+                      <span>Projects: {entityCounts.project}</span>
+                      <span>Tasks: {entityCounts.ticket}</span>
+                      <span>Other: {entityCounts.other}</span>
+                    </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <span>Projects: {formatMetric(selectedNode.metrics?.projects)}</span>
-                    <span>Blockers: {formatMetric(selectedNode.metrics?.blockers)}</span>
-                    <span>Decisions: {formatMetric(selectedNode.metrics?.decisions)}</span>
-                  </div>
-
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-                      Connected items
-                    </p>
-                    {selectedConnections.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No direct links yet.
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {selectedNode.label}
                       </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {selectedConnections.map((connection) => (
-                          <div
-                            key={`${selectedNode.id}-${connection.id}`}
-                            className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-sm"
-                          >
-                            <div>
-                              <p className="font-medium text-foreground">
-                                {connection.label}
-                              </p>
-                              <p className="text-[11px] text-muted-foreground capitalize">
-                                {connection.type} • {connection.relation}
-                              </p>
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {connection.weight}
+                      <p className="text-xs text-muted-foreground">
+                        {formatTypeLabel(selectedNode.type)} ·{' '}
+                        {formatMetric(selectedNode.metrics?.connections)} links
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <span>
+                        Tickets: {formatMetric(selectedNode.metrics?.tickets)}
+                      </span>
+                      <span>
+                        PRs: {formatMetric(selectedNode.metrics?.prs)}
+                      </span>
+                      <span>
+                        Projects: {formatMetric(selectedNode.metrics?.projects)}
+                      </span>
+                      <span>
+                        Blockers: {formatMetric(selectedNode.metrics?.blockers)}
+                      </span>
+                    </div>
+
+                    {selectedConnectionTypes.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                          Connected entities
+                        </p>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {selectedConnectionTypes.map((connection) => (
+                            <span
+                              key={connection.type}
+                              className="flex items-center gap-2 rounded-full border border-border/50 bg-background/70 px-2 py-1"
+                            >
+                              <span
+                                className="h-2 w-2 rounded-full"
+                                style={{ background: connection.color }}
+                              />
+                              {connection.label} · {connection.count}
                             </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedRelations.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                          Link mix
+                        </p>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {selectedRelations.map((relation) => (
+                            <span
+                              key={relation.relation}
+                              className="rounded-full border border-border/50 bg-background/70 px-2 py-1"
+                              style={{
+                                borderColor:
+                                  edgeStyles[relation.relation]?.color ??
+                                  undefined,
+                              }}
+                            >
+                              {relation.label} · {relation.count}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                        Highlights
+                      </p>
+                      <div className="space-y-2 text-sm text-foreground">
+                        {selectedHighlights.map((note) => (
+                          <div
+                            key={note}
+                            className="rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[12px] text-muted-foreground"
+                          >
+                            {note}
                           </div>
                         ))}
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+                    </div>
 
-            <div className="space-y-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                        Connected items
+                      </p>
+                      {selectedConnectionsPreview.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No direct links yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedConnectionsPreview.map((connection) => (
+                            <div
+                              key={`${selectedNode.id}-${connection.id}`}
+                              className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-sm"
+                            >
+                              <div className="flex items-start gap-2">
+                                <span
+                                  className="mt-1 h-2 w-2 rounded-full"
+                                  style={{
+                                    background:
+                                      nodeColors[connection.type] ??
+                                      nodeColors.other,
+                                  }}
+                                />
+                                <div>
+                                  <p className="font-medium text-foreground">
+                                    {connection.label}
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground">
+                                    {formatTypeLabel(connection.type)} ·{' '}
+                                    {relationLabels[connection.relation] ||
+                                      connection.relation}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {connection.weight}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="rounded-2xl border border-border/50 bg-card/30 p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-3">
                   <Sparkles className="w-4 h-4" />
@@ -782,16 +1032,22 @@ export default function TeamClient() {
                     Top connectors
                   </span>
                 </div>
-                {topConnectors.length === 0 ? (
+                {!activeTypes.person ? (
+                  <p className="text-sm text-muted-foreground">
+                    Enable People to surface connectors.
+                  </p>
+                ) : topConnectors.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No teammate signals yet.
                   </p>
                 ) : (
                   <div className="space-y-3">
                     {topConnectors.map((person) => (
-                      <div
+                      <button
                         key={person.id}
-                        className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-sm"
+                        type="button"
+                        onClick={() => setSelectedNodeId(person.id)}
+                        className="flex w-full items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-sm transition hover:border-border/60 hover:bg-background/90"
                       >
                         <span className="font-medium text-foreground">
                           {person.label}
@@ -799,99 +1055,12 @@ export default function TeamClient() {
                         <span className="text-xs text-muted-foreground">
                           {formatMetric(person.metrics?.connections)} links
                         </span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
             </div>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1.2fr,1fr]">
-            <div className="rounded-2xl border border-border/50 bg-card/30 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                    Signal mix
-                  </p>
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Where the team is spending attention
-                  </h2>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  Based on Linear + memory signals
-                </span>
-              </div>
-              <SignalMixChart data={signalMix} />
-            </div>
-
-            <div className="rounded-2xl border border-border/50 bg-card/30 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                    Collaboration load
-                  </p>
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Who connects the most work
-                  </h2>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  Links across tickets, projects, and decisions
-                </span>
-              </div>
-              <ConnectorBarChart data={connectorBars} />
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border/50 bg-card/30 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                  Team members
-                </p>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Signals by teammate
-                </h2>
-              </div>
-              <div className="text-xs text-muted-foreground flex items-center gap-2">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Stronger insights come from more signals.
-              </div>
-            </div>
-
-            {people.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No teammates found yet.
-              </p>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {people.map((person) => (
-                  <div
-                    key={person.id}
-                    className="rounded-xl border border-border/40 bg-background/70 p-4"
-                  >
-                    <p className="font-medium text-foreground">
-                      {person.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatMetric(person.metrics?.connections)} connections
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span>
-                        Tickets: {formatMetric(person.metrics?.tickets)}
-                      </span>
-                      <span>PRs: {formatMetric(person.metrics?.prs)}</span>
-                      <span>
-                        Projects: {formatMetric(person.metrics?.projects)}
-                      </span>
-                      <span>
-                        Blockers: {formatMetric(person.metrics?.blockers)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </main>

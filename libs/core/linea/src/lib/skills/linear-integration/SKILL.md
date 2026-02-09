@@ -1,8 +1,9 @@
-export const linearIntegrationSkill = {
-  name: 'linear-integration',
-  description:
-    'Use this skill for requests related to Linear issues, projects, sprints, and team workload. This skill provides guidance on how to effectively query and interact with Linear data.',
-  content: `# Linear Integration Skill
+---
+name: linear-integration
+description: Use this skill for requests related to Linear issues, projects, sprints, and team workload. This skill provides guidance on how to effectively query and interact with Linear data.
+---
+
+# Linear Integration Skill
 
 ## Overview
 
@@ -19,20 +20,20 @@ This skill provides instructions for accessing and working with Linear data thro
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
-| \`get_linear_issues\` | Fetch issues with filters | General issue queries, blockers, stalled work |
-| \`get_linear_issue_details\` | Get full issue details | When you need specifics about one issue |
-| \`search_linear_issues\` | Text search across issues | When user mentions specific keywords |
-| \`get_linear_project_status\` | Project health and progress | Project status questions |
-| \`get_linear_team_workload\` | Workload distribution | Capacity and workload questions |
-| \`get_linear_cycle_status\` | Sprint/cycle progress | Sprint status questions |
+| `get_linear_issues` | Fetch issues with filters | General issue queries, blockers, stalled work |
+| `get_linear_issue_details` | Get full issue details | When you need specifics about one issue |
+| `search_linear_issues` | Text search across issues | When user mentions specific keywords |
+| `get_linear_project_status` | Project health and progress | Project status questions |
+| `get_linear_team_workload` | Workload distribution | Capacity and workload questions |
+| `get_linear_cycle_status` | Sprint/cycle progress | Sprint status questions |
 
 ### Action Tools (Explicit Request)
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
-| \`create_linear_issue\` | Create a new issue | Use when the user explicitly asks to file/create a ticket |
-| \`add_linear_comment\` | Add comment to issue | Use when the user wants to add context or questions |
-| \`update_linear_ticket\` | Update issue fields | Use when the user wants to change priority, assignee, etc. (confirm if unclear) |
+| `create_linear_issue` | Create a new issue | Use when the user explicitly asks to file/create a ticket |
+| `add_linear_comment` | Add comment to issue | Use when the user wants to add context or questions |
+| `update_linear_ticket` | Update issue fields | Use when the user wants to change priority, assignee, etc. (confirm if unclear) |
 
 ## Instructions
 
@@ -41,16 +42,18 @@ This skill provides instructions for accessing and working with Linear data thro
 Categorize the user's request:
 
 - **Status Query**: "How's the sprint?", "What's blocking us?" → Use query tools
-- **Specific Lookup**: "What's issue ABC-123 about?" → Use \`get_linear_issue_details\`
-- **Search**: "Find issues about authentication" → Use \`search_linear_issues\`
+- **Specific Lookup**: "What's issue ABC-123 about?" → Use `get_linear_issue_details`
+- **Search**: "Find issues about authentication" → Use `search_linear_issues`
 - **Action Request**: "Update the priority" → Use action tools (require approval)
-- **Create Request**: "Create a ticket for X" → Use \`create_linear_issue\` with required fields
+- **Create Request**: "Create a ticket for X" → Use `create_linear_issue` with required fields
 
 ### 2. Choose the Right Filter
 
-For \`get_linear_issues\`, use appropriate filters:
+For `get_linear_issues`, use appropriate filters (and optional assignee filtering):
 
 - "my_issues": Current user's assigned issues
+- assignee: "Full Name" (or email) to filter by assignee
+- assigneeId: "user-id" to filter by assignee ID (preferred when known)
 - "team_issues": All team issues
 - "blockers": Issues marked as blocked
 - "stalled": Issues with no activity for 7+ days
@@ -100,5 +103,4 @@ If Linear returns no results:
 1. **Be proactive** - Don't just answer, anticipate follow-ups
 2. **Show context** - Include relevant links and IDs
 3. **Respect privacy** - Don't judge individual performance
-4. **Confirm actions** - Always get approval before modifying data`,
-};
+4. **Confirm actions** - Always get approval before modifying data

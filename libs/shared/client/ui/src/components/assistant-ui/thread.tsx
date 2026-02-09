@@ -153,7 +153,7 @@ const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root className="aui-assistant-message-root relative mx-auto mb-6 flex w-full max-w-(--thread-max-width) gap-4">
       <div className="aui-assistant-message-content min-w-0 flex-1">
-        <MessagePrimitive.Parts
+        <MessagePrimitive.Unstable_PartsGroupedByParentId
           components={{
             Text: MarkdownText,
             tools: { Fallback: ToolFallback },
@@ -202,7 +202,7 @@ const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root className="aui-user-message-root relative mx-auto mb-6 flex w-full max-w-(--thread-max-width) flex-col items-end gap-2">
       <div className="aui-user-message-content relative max-w-[80%] rounded-xl bg-muted px-4 py-2.5">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Unstable_PartsGroupedByParentId components={{}} />
       </div>
 
       <UserActionBar />

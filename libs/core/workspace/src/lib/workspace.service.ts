@@ -16,6 +16,7 @@ import {
   EventBusService,
   workspace,
   workspaceInvite,
+  WorkspaceCreatedEvent,
   WorkspaceMemberInvitedEvent,
   WorkspaceMemberJoinedEvent,
   workspaceMembership,
@@ -387,6 +388,18 @@ export class WorkspaceService {
         },
       });
     });
+
+    await this.eventBusService.publish(
+      new WorkspaceCreatedEvent(
+        {
+          workspaceId,
+          workspaceName: input.name,
+          createdAt: now.toISOString(),
+          emittedAt: new Date().toISOString(),
+        },
+        adminUserId,
+      ),
+    );
 
     return {
       workspaceId,

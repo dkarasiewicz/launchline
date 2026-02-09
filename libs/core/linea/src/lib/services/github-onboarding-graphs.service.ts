@@ -377,15 +377,63 @@ Recent PRs: ${state.recentPRs.length}`,
       };
 
       try {
+        const languageCounts = state.repoInfos.reduce<Record<string, number>>(
+          (acc, repo) => {
+            if (repo.language) {
+              acc[repo.language] = (acc[repo.language] || 0) + 1;
+            }
+            return acc;
+          },
+          {},
+        );
+        const topLanguages = Object.entries(languageCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([language]) => language);
+        const overviewMemory = await memoryService.saveMemory(ctx, {
+          namespace: 'codebase' as MemoryNamespace,
+          category: 'insight',
+          content: JSON.stringify({
+            source: 'onboarding',
+            platform: 'github',
+            kind: 'overview',
+            counts: {
+              repositories: state.repoInfos.length,
+              contributors: state.contributors.length,
+              openPRs: state.openPRs.length,
+              recentPRs: state.recentPRs.length,
+            },
+            topLanguages,
+            repositories: state.repoInfos,
+            contributors: state.contributors,
+            openPRs: state.openPRs,
+            recentPRs: state.recentPRs,
+            prInsights: state.prInsights,
+            teamPatterns: state.teamPatterns,
+            codingPatterns: state.codingPatterns,
+          }),
+          summary: `[Onboarding][GitHub] Overview: ${state.repoInfos.length} repos, ${state.openPRs.length} open PRs, ${topLanguages.length ? `top languages ${topLanguages.join(', ')}` : 'no language data'}`,
+          importance: 0.85,
+          confidence: 1,
+          sourceEventIds: [],
+          relatedEntityIds: [],
+          relatedMemoryIds: [],
+          entityRefs: {},
+        });
+        memoriesCreated.push(overviewMemory.id);
+
         if (state.repoInfos.length > 0) {
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'codebase' as MemoryNamespace,
             category: 'insight',
             content: JSON.stringify({
+              source: 'onboarding',
+              platform: 'github',
+              kind: 'repositories',
               repos: state.repoInfos,
               contributors: state.contributors,
             }),
-            summary: `GitHub repositories: ${state.repoInfos.map((r) => r.name).join(', ')}`,
+            summary: `[Onboarding][GitHub] Repositories: ${state.repoInfos.map((r) => r.name).join(', ')}`,
             importance: 0.8,
             confidence: 1,
             sourceEventIds: [],
@@ -400,8 +448,15 @@ Recent PRs: ${state.recentPRs.length}`,
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'codebase' as MemoryNamespace,
             category: 'insight',
-            content: obs.observation,
-            summary: obs.title,
+            content: JSON.stringify({
+              source: 'onboarding',
+              platform: 'github',
+              kind: 'observation',
+              title: obs.title,
+              observation: obs.observation,
+              relatedEntities: obs.relatedEntities || [],
+            }),
+            summary: `[Onboarding][GitHub] ${obs.title}`,
             importance: obs.importance,
             confidence: 0.8,
             sourceEventIds: [],
@@ -410,6 +465,29 @@ Recent PRs: ${state.recentPRs.length}`,
             entityRefs: {},
           });
           memoriesCreated.push(memory.id);
+        }
+
+        if (memoriesCreated.length > 0) {
+          const memoryIds = [...memoriesCreated];
+          const indexMemory = await memoryService.saveMemory(ctx, {
+            namespace: 'workspace' as MemoryNamespace,
+            category: 'settings',
+            content: JSON.stringify({
+              source: 'onboarding',
+              platform: 'github',
+              kind: 'index',
+              runId: ctx.correlationId,
+              memoryIds,
+            }),
+            summary: `[Onboarding][GitHub] Index: ${memoryIds.length} memories`,
+            importance: 0.2,
+            confidence: 1,
+            sourceEventIds: [],
+            relatedEntityIds: [],
+            relatedMemoryIds: [],
+            entityRefs: {},
+          });
+          memoriesCreated.push(indexMemory.id);
         }
 
         return { memoriesCreated, phase: 'complete' };

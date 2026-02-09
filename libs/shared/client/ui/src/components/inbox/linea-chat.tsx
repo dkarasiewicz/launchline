@@ -27,31 +27,7 @@ import {
   InboxAssistantThinking,
 } from './inbox-messages';
 
-// Tool UIs - All registered tools
-import {
-  UpdateLinearTicketToolUI,
-  SendSlackMessageToolUI,
-  InternetSearchToolUI,
-  CreateGitHubIssueToolUI,
-  ThinkToolUI,
-  WriteTodosToolUI,
-  SearchMemoriesTool,
-  SaveMemoryTool,
-  GetBlockersTool,
-  GetDecisionsTool,
-  ResolveIdentityTool,
-  GetInboxItemsTool,
-  GetWorkspaceStatusTool,
-  GetLinearIssuesTool,
-  GetLinearIssueDetailsTool,
-  SearchLinearIssuesTool,
-  GetLinearProjectStatusTool,
-  GetLinearTeamWorkloadTool,
-  GetLinearCycleStatusTool,
-  AddLinearCommentTool,
-  CreateLinearIssueTool,
-  GenerateProjectUpdateTool,
-} from '../tool-ui';
+import { LineaToolRegistry } from '../tool-ui';
 import { LogoIcon } from '../logo';
 
 /**
@@ -90,35 +66,7 @@ export function LineaChat() {
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
 
-      {/* Register Tool UIs */}
-      {/* Memory tools */}
-      <SearchMemoriesTool />
-      <SaveMemoryTool />
-      <GetBlockersTool />
-      <GetDecisionsTool />
-      <ResolveIdentityTool />
-      {/* Inbox tools */}
-      <GetInboxItemsTool />
-      <GetWorkspaceStatusTool />
-      {/* Linear skills */}
-      <GetLinearIssuesTool />
-      <GetLinearIssueDetailsTool />
-      <SearchLinearIssuesTool />
-      <GetLinearProjectStatusTool />
-      <GetLinearTeamWorkloadTool />
-      <GetLinearCycleStatusTool />
-      <AddLinearCommentTool />
-      <CreateLinearIssueTool />
-      {/* Project update */}
-      <GenerateProjectUpdateTool />
-      {/* Human-in-the-loop Approval UIs */}
-      <UpdateLinearTicketToolUI />
-      <SendSlackMessageToolUI />
-      <InternetSearchToolUI />
-      <CreateGitHubIssueToolUI />
-      <ThinkToolUI />
-      {/* DeepAgents built-in write_todos for task planning */}
-      <WriteTodosToolUI />
+      <LineaToolRegistry />
     </div>
   );
 }

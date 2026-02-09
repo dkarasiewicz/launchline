@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Docker from 'dockerode';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
-import { PassThrough } from 'node:stream';
-import { MemoryService } from './memory.service';
+import { randomUUID } from 'node:crypto';
+import { TextEncoder } from 'node:util';
+import type { ExecuteResponse, SandboxBackendProtocol } from 'deepagents';
+import { WorkspaceSkillsService } from './workspace-skills.service';
+import { DenoSandboxRegion, SandboxLifetime } from '@langchain/deno';
 
 export type SandboxRunResult = {
   output: string;
@@ -40,29 +39,80 @@ export type SandboxWorkflowResult = {
   containerId?: string;
   persistedWorkspace: boolean;
   summary: string;
+  sessionId?: string;
+  sessionStatus?: 'active' | 'closed' | 'expired' | 'not_found';
 };
+
+type ManagedSandbox = SandboxBackendProtocol & {
+  close?: () => Promise<void>;
+  stop?: () => Promise<void>;
+};
+
+type SandboxSession = {
+  id: string;
+  workspaceId: string;
+  sandbox: ManagedSandbox;
+  createdAt: number;
+  lastUsedAt: number;
+  expiresAt: number;
+  provider: string;
+  persistWorkspace: boolean;
+};
+
+type ExecuteOutcome = {
+  output: string;
+  exitCode: number | null;
+  truncated: boolean;
+  timedOut: boolean;
+};
+
+class SandboxTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SandboxTimeoutError';
+  }
+}
 
 @Injectable()
 export class SandboxService {
   private readonly logger = new Logger(SandboxService.name);
-  private readonly docker: Docker;
-  private readonly image: string;
+  private readonly provider: string;
   private readonly outputLimit: number;
+  private readonly sessionTtlMs: number;
+  private readonly maxSessions: number;
+  private readonly workflowMaxSteps: number;
+  private readonly workflowTimeoutMs: number;
+  private readonly sandboxTimeoutMs: number;
+  private readonly workspaceDir: string;
+  private readonly sessions = new Map<string, SandboxSession>();
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly memoryService: MemoryService,
+    private readonly workspaceSkillsService: WorkspaceSkillsService,
   ) {
-    this.docker = new Docker({
-      socketPath: process.env['DOCKER_SOCKET'] || '/var/run/docker.sock',
-    });
-    this.image =
-      this.configService.get<string>('linea.sandbox.image') ||
-      process.env['LINEA_SANDBOX_IMAGE'] ||
-      'mcr.microsoft.com/playwright:v1.50.0-jammy';
+    this.provider = (
+      this.configService.get<string>('linea.sandbox.provider') ||
+      process.env['LINEA_SANDBOX_PROVIDER'] ||
+      'node-vfs'
+    ).toLowerCase();
     this.outputLimit = Number(
       process.env['LINEA_SANDBOX_OUTPUT_LIMIT'] || '12000',
     );
+    this.sessionTtlMs = Number(
+      process.env['LINEA_SANDBOX_SESSION_TTL_MS'] || '1800000',
+    );
+    this.maxSessions = Number(process.env['LINEA_SANDBOX_MAX_SESSIONS'] || '8');
+    this.workflowMaxSteps = Number(
+      process.env['LINEA_SANDBOX_WORKFLOW_MAX_STEPS'] || '30',
+    );
+    this.workflowTimeoutMs = Number(
+      process.env['LINEA_SANDBOX_WORKFLOW_TIMEOUT_MS'] || '1800000',
+    );
+    this.sandboxTimeoutMs = Number(
+      process.env['LINEA_SANDBOX_TIMEOUT_MS'] || '120000',
+    );
+    this.workspaceDir =
+      process.env['LINEA_SANDBOX_WORKSPACE_DIR'] || '/workspace';
   }
 
   async runCommand(input: {
@@ -72,64 +122,33 @@ export class SandboxService {
     image?: string;
   }): Promise<SandboxRunResult> {
     const startedAt = Date.now();
-    const timeoutMs = input.timeoutMs ?? 120_000;
-    const image = input.image || this.image;
-    let tempDir: string | null = null;
-
     try {
-      await this.ensureImage(image);
-
-      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'linea-sandbox-'));
-      await this.writeSkills(tempDir, input.workspaceId);
-
-      const binds: string[] = [];
-      if (tempDir) {
-        binds.push(`${tempDir}:/workspace`);
-      }
-
-      const container = await this.docker.createContainer({
-        Image: image,
-        Cmd: ['bash', '-lc', input.command],
-        Tty: false,
-        Env: ['SKILLS_DIR=/workspace/skills'],
-        WorkingDir: '/workspace',
-        HostConfig: {
-          AutoRemove: true,
-          NetworkMode: process.env['LINEA_SANDBOX_NETWORK'] || 'bridge',
-          Binds: binds,
-          Memory: Number(process.env['LINEA_SANDBOX_MEMORY'] || 536870912),
-          CpuShares: Number(process.env['LINEA_SANDBOX_CPU_SHARES'] || 512),
-        },
+      const workflow = await this.runWorkflow({
+        workspaceId: input.workspaceId,
+        goal: 'execute',
+        steps: [{ name: 'execute', command: input.command }],
+        timeoutMs: input.timeoutMs,
+        persistWorkspace: false,
+        keepAlive: false,
       });
-
-      await container.start();
-
-      const logs = await this.collectLogs(container, timeoutMs);
-      const waitResult = await container.wait();
-
+      const step = workflow.steps[0];
       return {
-        output: logs.output,
-        exitCode: waitResult.StatusCode ?? null,
+        output: step?.output ?? workflow.summary,
+        exitCode: step?.exitCode ?? workflow.exitCode,
         durationMs: Date.now() - startedAt,
-        truncated: logs.truncated,
-        containerId: container.id,
+        truncated: step?.truncated ?? workflow.truncated,
       };
     } catch (error) {
       this.logger.error(
         { err: error, workspaceId: input.workspaceId },
         'Sandbox command failed',
       );
-
       return {
         output: error instanceof Error ? error.message : 'Sandbox error',
         exitCode: null,
         durationMs: Date.now() - startedAt,
         truncated: false,
       };
-    } finally {
-      if (tempDir) {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      }
     }
   }
 
@@ -140,67 +159,129 @@ export class SandboxService {
     timeoutMs?: number;
     image?: string;
     persistWorkspace?: boolean;
+    sessionId?: string;
+    keepAlive?: boolean;
+    closeSession?: boolean;
   }): Promise<SandboxWorkflowResult> {
     const startedAt = Date.now();
-    const image = input.image || this.image;
-    const persistWorkspace = input.persistWorkspace ?? true;
-    const maxSteps = Number(
-      process.env['LINEA_SANDBOX_WORKFLOW_MAX_STEPS'] || '30',
-    );
-    const maxTimeoutMs = Number(
-      process.env['LINEA_SANDBOX_WORKFLOW_TIMEOUT_MS'] || '1800000',
-    );
+    let persistWorkspace = input.persistWorkspace ?? true;
+    const keepAlive = input.keepAlive ?? false;
+    const closeSession = input.closeSession ?? false;
+    const requestedSessionId = input.sessionId;
+    const maxSteps = this.workflowMaxSteps;
+    const maxTimeoutMs = this.workflowTimeoutMs;
     const timeoutMs = Math.min(input.timeoutMs ?? maxTimeoutMs, maxTimeoutMs);
 
-    let tempDir: string | null = null;
-    let workspaceDir: string | null = null;
-    let container: Docker.Container | null = null;
+    let sandbox: ManagedSandbox | null = null;
+    let session: SandboxSession | null = null;
+    let sessionStatus: SandboxWorkflowResult['sessionStatus'];
+    let responseSessionId: string | undefined;
+    let preserveSandbox = false;
+    let ephemeralSandbox: ManagedSandbox | null = null;
 
     try {
+      if (closeSession && !requestedSessionId) {
+        throw new Error('closeSession requested but no sessionId provided.');
+      }
+
+      await this.pruneExpiredSessions();
+
+      if (requestedSessionId) {
+        session = this.sessions.get(requestedSessionId) ?? null;
+        if (!session) {
+          return {
+            goal: input.goal,
+            steps: [],
+            success: false,
+            exitCode: null,
+            durationMs: Date.now() - startedAt,
+            truncated: false,
+            persistedWorkspace: persistWorkspace,
+            summary: `Sandbox session ${requestedSessionId} not found.`,
+            sessionId: requestedSessionId,
+            sessionStatus: 'not_found',
+          };
+        }
+
+        if (session.workspaceId !== input.workspaceId) {
+          throw new Error('Sandbox session does not belong to this workspace.');
+        }
+
+        if (closeSession) {
+          await this.closeSession(session, 'closed');
+          return {
+            goal: input.goal,
+            steps: [],
+            success: true,
+            exitCode: 0,
+            durationMs: Date.now() - startedAt,
+            truncated: false,
+            persistedWorkspace: session.persistWorkspace,
+            summary: `Sandbox session ${session.id} closed.`,
+            sessionId: session.id,
+            sessionStatus: 'closed',
+          };
+        }
+
+        sandbox = session.sandbox;
+        responseSessionId = session.id;
+        sessionStatus = 'active';
+        persistWorkspace = session.persistWorkspace;
+        session.lastUsedAt = Date.now();
+        session.expiresAt = session.lastUsedAt + this.sessionTtlMs;
+        preserveSandbox = true;
+      }
+
+      if (input.steps.length === 0) {
+        throw new Error('Workflow must include at least one step.');
+      }
+
       if (input.steps.length > maxSteps) {
         throw new Error(
           `Workflow has ${input.steps.length} steps, exceeding max ${maxSteps}.`,
         );
       }
 
-      await this.ensureImage(image);
-
-      if (persistWorkspace) {
-        const workspaceRoot =
-          process.env['LINEA_SANDBOX_WORKSPACE_ROOT'] ||
-          path.join(os.tmpdir(), 'linea-sandbox-workspaces');
-        workspaceDir = path.join(workspaceRoot, input.workspaceId);
-        await fs.mkdir(workspaceDir, { recursive: true });
-      } else {
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'linea-sandbox-'));
-        workspaceDir = tempDir;
+      if (!sandbox) {
+        if (persistWorkspace) {
+          const workspaceSessionId = this.getWorkspaceSessionId(
+            input.workspaceId,
+          );
+          session = await this.getOrCreateSession({
+            sessionId: workspaceSessionId,
+            workspaceId: input.workspaceId,
+            persistWorkspace: true,
+          });
+          sandbox = session.sandbox;
+          preserveSandbox = true;
+          if (keepAlive) {
+            responseSessionId = session.id;
+            sessionStatus = 'active';
+          }
+        } else {
+          sandbox = await this.createSandbox();
+          ephemeralSandbox = sandbox;
+          if (keepAlive) {
+            await this.pruneExpiredSessions();
+            if (this.sessions.size >= this.maxSessions) {
+              await this.evictOldestSession();
+            }
+            const sessionId = randomUUID();
+            session = this.buildSession(
+              sessionId,
+              input.workspaceId,
+              sandbox,
+              false,
+            );
+            this.sessions.set(sessionId, session);
+            responseSessionId = sessionId;
+            sessionStatus = 'active';
+            preserveSandbox = true;
+          }
+        }
       }
 
-      if (!workspaceDir) {
-        throw new Error('Failed to initialize sandbox workspace directory.');
-      }
-
-      await this.writeSkills(workspaceDir, input.workspaceId, true);
-
-      const binds: string[] = [];
-      binds.push(`${workspaceDir}:/workspace`);
-
-      container = await this.docker.createContainer({
-        Image: image,
-        Cmd: ['bash', '-lc', 'tail -f /dev/null'],
-        Tty: false,
-        Env: ['SKILLS_DIR=/workspace/skills'],
-        WorkingDir: '/workspace',
-        HostConfig: {
-          AutoRemove: true,
-          NetworkMode: process.env['LINEA_SANDBOX_NETWORK'] || 'bridge',
-          Binds: binds,
-          Memory: Number(process.env['LINEA_SANDBOX_MEMORY'] || 536870912),
-          CpuShares: Number(process.env['LINEA_SANDBOX_CPU_SHARES'] || 512),
-        },
-      });
-
-      await container.start();
+      await this.prepareWorkspace(sandbox, input.workspaceId, true);
 
       const deadline = Date.now() + timeoutMs;
       const stepResults: SandboxWorkflowStepResult[] = [];
@@ -227,7 +308,7 @@ export class SandboxService {
           break;
         }
 
-        const stepResult = await this.runExecStep(container, step, remainingMs);
+        const stepResult = await this.executeStep(sandbox, step, remainingMs);
         stepResults.push(stepResult);
         truncated = truncated || stepResult.truncated;
 
@@ -254,9 +335,10 @@ export class SandboxService {
         exitCode,
         durationMs,
         truncated,
-        containerId: container.id,
         persistedWorkspace: persistWorkspace,
         summary,
+        sessionId: responseSessionId,
+        sessionStatus,
       };
     } catch (error) {
       this.logger.error(
@@ -274,207 +356,372 @@ export class SandboxService {
         persistedWorkspace: persistWorkspace,
         summary:
           error instanceof Error ? error.message : 'Sandbox workflow error',
+        sessionId: responseSessionId,
+        sessionStatus,
       };
     } finally {
-      if (container) {
-        try {
-          await container.stop({ t: 2 });
-        } catch {
-          // ignore
-        }
-      }
-
-      if (tempDir) {
-        await fs.rm(tempDir, { recursive: true, force: true });
+      if (ephemeralSandbox && !preserveSandbox) {
+        await this.closeSandbox(ephemeralSandbox);
       }
     }
   }
 
-  private async ensureImage(image: string): Promise<void> {
-    const images = await this.docker.listImages({
-      filters: { reference: [image] },
+  async getWorkspaceSandbox(workspaceId: string): Promise<ManagedSandbox> {
+    const session = await this.getOrCreateSession({
+      sessionId: this.getWorkspaceSessionId(workspaceId),
+      workspaceId,
+      persistWorkspace: true,
     });
-    if (images.length > 0) {
-      return;
-    }
-
-    this.logger.log({ image }, 'Pulling sandbox image');
-
-    const stream = await this.docker.pull(image);
-    await new Promise<void>((resolve, reject) => {
-      const modem = (this.docker as unknown as { modem?: any }).modem;
-      if (!modem?.followProgress) {
-        stream.on('end', () => resolve());
-        stream.on('error', (err) => reject(err));
-        return;
-      }
-
-      modem.followProgress(stream, (err: Error | null) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
+    await this.ensureWorkspaceDir(session.sandbox);
+    return session.sandbox;
   }
 
-  private async collectLogs(
-    container: Docker.Container,
-    timeoutMs: number,
-  ): Promise<{ output: string; truncated: boolean }> {
-    const logStream = await container.logs({
-      follow: true,
-      stdout: true,
-      stderr: true,
-    });
-
-    let output = '';
-    let truncated = false;
-
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(async () => {
-        try {
-          await container.stop({ t: 2 });
-        } catch {
-          // ignore
-        }
-        resolve();
-      }, timeoutMs);
-
-      logStream.on('data', (chunk: Buffer) => {
-        if (truncated) {
-          return;
-        }
-        const next = chunk.toString('utf8');
-        if (output.length + next.length > this.outputLimit) {
-          output += next.slice(0, this.outputLimit - output.length);
-          truncated = true;
-          return;
-        }
-        output += next;
-      });
-      logStream.on('end', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-      logStream.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-    });
-
-    return { output: output.trim(), truncated };
+  async executeCommand(input: {
+    workspaceId: string;
+    command: string;
+    timeoutMs?: number;
+  }): Promise<ExecuteResponse> {
+    const sandbox = await this.getWorkspaceSandbox(input.workspaceId);
+    await this.writeSkills(sandbox, input.workspaceId, true);
+    const result = await this.executeStep(
+      sandbox,
+      { name: 'execute', command: input.command },
+      input.timeoutMs ?? this.sandboxTimeoutMs,
+    );
+    return {
+      output: result.output,
+      exitCode: result.exitCode,
+      truncated: result.truncated,
+    };
   }
 
-  private async runExecStep(
-    container: Docker.Container,
+  private async executeStep(
+    sandbox: ManagedSandbox,
     step: SandboxWorkflowStep,
     timeoutMs: number,
   ): Promise<SandboxWorkflowStepResult> {
     const startedAt = Date.now();
-    const exec = await container.exec({
-      Cmd: ['bash', '-lc', step.command],
-      AttachStdout: true,
-      AttachStderr: true,
-    });
+    const decoratedCommand = this.decorateCommand(step.command);
 
-    const { output, truncated, timedOut } = await this.collectExecLogs(
-      container,
-      exec,
+    const outcome = await this.executeWithTimeout(
+      sandbox,
+      decoratedCommand,
       timeoutMs,
     );
-
-    let exitCode: number | null = null;
-    try {
-      const inspect = await exec.inspect();
-      if (typeof inspect.ExitCode === 'number') {
-        exitCode = inspect.ExitCode;
-      }
-    } catch {
-      exitCode = null;
-    }
 
     return {
       name: step.name,
       command: step.command,
-      output,
-      exitCode: timedOut ? null : exitCode,
+      output: outcome.output,
+      exitCode: outcome.exitCode,
       durationMs: Date.now() - startedAt,
-      truncated,
-      timedOut,
+      truncated: outcome.truncated,
+      timedOut: outcome.timedOut,
     };
   }
 
-  private async collectExecLogs(
-    container: Docker.Container,
-    exec: Docker.Exec,
+  private async executeWithTimeout(
+    sandbox: ManagedSandbox,
+    command: string,
     timeoutMs: number,
-  ): Promise<{ output: string; truncated: boolean; timedOut: boolean }> {
-    const stream = await exec.start({ hijack: true, stdin: false });
-    const stdout = new PassThrough();
-    const stderr = new PassThrough();
-    const modem = (this.docker as unknown as { modem?: any }).modem;
-
-    if (modem?.demuxStream) {
-      modem.demuxStream(stream, stdout, stderr);
-    } else {
-      stream.pipe(stdout);
-    }
-
-    let output = '';
-    let truncated = false;
+  ): Promise<ExecuteOutcome> {
     let timedOut = false;
 
-    const append = (chunk: Buffer) => {
-      if (truncated) {
-        return;
-      }
-      const next = chunk.toString('utf8');
-      if (output.length + next.length > this.outputLimit) {
-        output += next.slice(0, this.outputLimit - output.length);
-        truncated = true;
-        return;
-      }
-      output += next;
-    };
-
-    stdout.on('data', append);
-    stderr.on('data', append);
-
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(async () => {
+    const execution = Promise.resolve(sandbox.execute(command));
+    const timeoutPromise = new Promise<ExecuteResponse>((_, reject) => {
+      const timeout = setTimeout(() => {
         timedOut = true;
-        try {
-          await container.stop({ t: 2 });
-        } catch {
-          // ignore
-        }
-        resolve();
+        reject(new SandboxTimeoutError('Sandbox command timed out.'));
       }, timeoutMs);
-
-      const done = () => {
-        clearTimeout(timeout);
-        resolve();
-      };
-
-      stream.on('end', done);
-      stream.on('close', done);
-      stream.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-      stdout.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-      stderr.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
+      execution.finally(() => clearTimeout(timeout)).catch(() => undefined);
     });
 
-    return { output: output.trim(), truncated, timedOut };
+    try {
+      const result = await Promise.race([execution, timeoutPromise]);
+      return this.normalizeExecuteOutcome(
+        result.output,
+        result.exitCode,
+        result.truncated,
+      );
+    } catch (error) {
+      if (this.isTimeoutError(error) || timedOut) {
+        return {
+          output: 'Command timed out.',
+          exitCode: null,
+          truncated: false,
+          timedOut: true,
+        };
+      }
+
+      const message = error instanceof Error ? error.message : 'Sandbox error';
+      return {
+        output: message,
+        exitCode: null,
+        truncated: false,
+        timedOut: false,
+      };
+    }
+  }
+
+  private normalizeExecuteOutcome(
+    output: string | undefined,
+    exitCode: number | null | undefined,
+    truncated: boolean | undefined,
+  ): ExecuteOutcome {
+    const sanitizedOutput = (output ?? '').trim();
+    let normalized = sanitizedOutput;
+    let wasTruncated = Boolean(truncated);
+
+    if (normalized.length > this.outputLimit) {
+      normalized = normalized.slice(0, this.outputLimit);
+      wasTruncated = true;
+    }
+
+    return {
+      output: normalized,
+      exitCode: typeof exitCode === 'number' ? exitCode : null,
+      truncated: wasTruncated,
+      timedOut: false,
+    };
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const code = (error as { code?: string }).code;
+    if (code === 'COMMAND_TIMEOUT') {
+      return true;
+    }
+    return (error as Error).name === 'SandboxTimeoutError';
+  }
+
+  private decorateCommand(command: string): string {
+    const workdir = this.escapeShellValue(this.workspaceDir);
+    const skillsDir = this.escapeShellValue(`${this.workspaceDir}/skills`);
+    return `cd ${workdir} && export SKILLS_DIR=${skillsDir} && ${command}`;
+  }
+
+  private escapeShellValue(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+  }
+
+  private getWorkspaceSessionId(workspaceId: string): string {
+    return `workspace:${workspaceId}`;
+  }
+
+  private async getOrCreateSession(input: {
+    sessionId: string;
+    workspaceId: string;
+    persistWorkspace: boolean;
+  }): Promise<SandboxSession> {
+    const existing = this.sessions.get(input.sessionId);
+    if (existing) {
+      if (existing.workspaceId !== input.workspaceId) {
+        throw new Error('Sandbox session does not belong to this workspace.');
+      }
+      existing.lastUsedAt = Date.now();
+      existing.expiresAt = existing.lastUsedAt + this.sessionTtlMs;
+      return existing;
+    }
+
+    await this.pruneExpiredSessions();
+    if (this.sessions.size >= this.maxSessions) {
+      await this.evictOldestSession();
+    }
+
+    const sandbox = await this.createSandbox();
+    const session = this.buildSession(
+      input.sessionId,
+      input.workspaceId,
+      sandbox,
+      input.persistWorkspace,
+    );
+    this.sessions.set(input.sessionId, session);
+    return session;
+  }
+
+  private buildSession(
+    sessionId: string,
+    workspaceId: string,
+    sandbox: ManagedSandbox,
+    persistWorkspace: boolean,
+  ): SandboxSession {
+    const now = Date.now();
+    return {
+      id: sessionId,
+      workspaceId,
+      sandbox,
+      createdAt: now,
+      lastUsedAt: now,
+      expiresAt: now + this.sessionTtlMs,
+      provider: this.provider,
+      persistWorkspace,
+    };
+  }
+
+  private async pruneExpiredSessions(): Promise<void> {
+    const now = Date.now();
+    const expired = Array.from(this.sessions.values()).filter(
+      (session) => session.expiresAt <= now,
+    );
+    for (const session of expired) {
+      await this.closeSession(session, 'expired');
+    }
+  }
+
+  private async evictOldestSession(): Promise<void> {
+    const oldest = Array.from(this.sessions.values()).sort(
+      (a, b) => a.lastUsedAt - b.lastUsedAt,
+    )[0];
+    if (oldest) {
+      await this.closeSession(oldest, 'expired');
+    }
+  }
+
+  private async closeSession(
+    session: SandboxSession,
+    reason: 'closed' | 'expired',
+  ): Promise<void> {
+    this.sessions.delete(session.id);
+    await this.closeSandbox(session.sandbox);
+    this.logger.log(
+      { sessionId: session.id, reason },
+      'Sandbox session closed',
+    );
+  }
+
+  private async closeSandbox(sandbox: ManagedSandbox): Promise<void> {
+    try {
+      if (typeof sandbox.close === 'function') {
+        await sandbox.close();
+        return;
+      }
+      if (typeof sandbox.stop === 'function') {
+        await sandbox.stop();
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, 'Failed to close sandbox');
+    }
+  }
+
+  private async createSandbox(): Promise<ManagedSandbox> {
+    switch (this.provider) {
+      case 'node-vfs':
+        return this.createNodeVfsSandbox();
+      case 'deno':
+        return this.createDenoSandbox();
+      default:
+        throw new Error(
+          `Unsupported sandbox provider "${this.provider}". ` +
+            'Set LINEA_SANDBOX_PROVIDER to "node-vfs" or "deno".',
+        );
+    }
+  }
+
+  private async createNodeVfsSandbox(): Promise<ManagedSandbox> {
+    try {
+      const module = await import('@langchain/node-vfs');
+      const sandbox = await module.VfsSandbox.create({
+        mountPath: this.workspaceDir,
+        timeout: this.sandboxTimeoutMs,
+      });
+      return sandbox as ManagedSandbox;
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        'Failed to initialize Node VFS sandbox. Ensure @langchain/node-vfs is installed.',
+      );
+      throw error;
+    }
+  }
+
+  private async createDenoSandbox(): Promise<ManagedSandbox> {
+    try {
+      const module = await import('@langchain/deno');
+      const memoryMb = Number(process.env['LINEA_SANDBOX_MEMORY_MB'] || '1024');
+      const lifetime = (process.env['LINEA_SANDBOX_LIFETIME'] ||
+        'session') as SandboxLifetime;
+      const region = process.env['LINEA_SANDBOX_REGION'] as DenoSandboxRegion;
+      const sandbox = await module.DenoSandbox.create({
+        memoryMb,
+        lifetime,
+        region,
+      });
+      return sandbox as ManagedSandbox;
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        'Failed to initialize Deno sandbox. Ensure @langchain/deno is installed and configured.',
+      );
+      throw error;
+    }
+  }
+
+  private async ensureWorkspaceDir(sandbox: ManagedSandbox): Promise<void> {
+    await sandbox.execute(
+      `mkdir -p ${this.escapeShellValue(this.workspaceDir)}`,
+    );
+  }
+
+  private async prepareWorkspace(
+    sandbox: ManagedSandbox,
+    workspaceId: string,
+    resetSkillsDir: boolean,
+  ): Promise<void> {
+    await this.ensureWorkspaceDir(sandbox);
+    await this.writeSkills(sandbox, workspaceId, resetSkillsDir);
+  }
+
+  private async getSkillFiles(
+    workspaceId: string,
+  ): Promise<Array<{ name: string; fileName: string; content: string }>> {
+    const skills =
+      await this.workspaceSkillsService.listWorkspaceSkills(workspaceId);
+
+    return skills.map((skill, index) => {
+      const safeName = skill.slug || `skill-${index + 1}`;
+      return {
+        name: skill.name,
+        fileName: `${safeName}.md`,
+        content: skill.content,
+      };
+    });
+  }
+
+  private async writeSkills(
+    sandbox: ManagedSandbox,
+    workspaceId: string,
+    resetSkillsDir = false,
+  ): Promise<void> {
+    const skills = await this.getSkillFiles(workspaceId);
+    const skillsDir = `${this.workspaceDir}/skills`;
+
+    if (resetSkillsDir) {
+      await sandbox.execute(`rm -rf ${this.escapeShellValue(skillsDir)}`);
+    }
+
+    if (skills.length === 0) {
+      return;
+    }
+
+    await sandbox.execute(`mkdir -p ${this.escapeShellValue(skillsDir)}`);
+
+    const encoder = new TextEncoder();
+    const uploads: Array<[string, Uint8Array]> = skills.map((skill) => [
+      `${skillsDir}/${skill.fileName}`,
+      encoder.encode(skill.content),
+    ]);
+
+    const index = skills
+      .map((skill) => `- ${skill.name} (${skill.fileName})`)
+      .join('\n');
+    uploads.push([
+      `${skillsDir}/SKILLS_INDEX.md`,
+      encoder.encode(`# Workspace Skills\n\n${index}\n`),
+    ]);
+
+    await sandbox.uploadFiles?.(uploads);
   }
 
   private buildWorkflowSummary(
@@ -504,74 +751,8 @@ export class SandboxService {
       return `Workflow "${goal}" timed out on step "${failed.name}".`;
     }
 
-    return `Workflow "${goal}" failed on step "${failed.name}" (exit code ${failed.exitCode ?? 'unknown'}).`;
-  }
-
-  private async getSkillFiles(
-    workspaceId: string,
-  ): Promise<Array<{ name: string; fileName: string; content: string }>> {
-    const memories = await this.memoryService.listMemories(
-      workspaceId,
-      'workspace',
-      { limit: 50 },
-    );
-
-    const skills = memories.filter((memory) => memory.category === 'skill');
-
-    return skills.map((skill, index) => {
-      const name =
-        (skill as unknown as { skillName?: string }).skillName ||
-        skill.summary ||
-        `Skill ${index + 1}`;
-      const safeName = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+/, '')
-        .replace(/-+$/, '')
-        .slice(0, 40);
-      return {
-        name,
-        fileName: safeName ? `${safeName}.md` : `skill-${index + 1}.md`,
-        content: skill.content,
-      };
-    });
-  }
-
-  private async writeSkills(
-    workspaceDir: string,
-    workspaceId: string,
-    resetSkillsDir = false,
-  ): Promise<void> {
-    const skills = await this.getSkillFiles(workspaceId);
-    const skillsDir = path.join(workspaceDir, 'skills');
-
-    if (resetSkillsDir) {
-      await fs.rm(skillsDir, { recursive: true, force: true });
-    }
-
-    if (skills.length === 0) {
-      return;
-    }
-
-    await fs.mkdir(skillsDir, { recursive: true });
-
-    await Promise.all(
-      skills.map((skill) =>
-        fs.writeFile(
-          path.join(skillsDir, skill.fileName),
-          skill.content,
-          'utf8',
-        ),
-      ),
-    );
-
-    const index = skills
-      .map((skill) => `- ${skill.name} (${skill.fileName})`)
-      .join('\n');
-    await fs.writeFile(
-      path.join(skillsDir, 'SKILLS_INDEX.md'),
-      `# Workspace Skills\n\n${index}\n`,
-      'utf8',
-    );
+    return `Workflow "${goal}" failed on step "${failed.name}" (exit code ${
+      failed.exitCode ?? 'unknown'
+    }).`;
   }
 }

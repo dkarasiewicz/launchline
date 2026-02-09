@@ -1,8 +1,9 @@
-export const teamAnalysisSkill = {
-  name: 'team-analysis',
-  description:
-    'Use this skill when analyzing team dynamics, workload distribution, hidden contributions, or individual performance context.',
-  content: `# Team Analysis Skill
+---
+name: team-analysis
+description: Use this skill when analyzing team dynamics, workload distribution, hidden contributions, or individual performance context.
+---
+
+# Team Analysis Skill
 
 ## Overview
 
@@ -46,7 +47,7 @@ Structure your response:
 
 ## Example Response Format
 
-\`\`\`
+```
 [Name] this week:
 
 **Visible work:**
@@ -59,5 +60,4 @@ Structure your response:
 
 **Assessment:**
 Force-multiplier work that doesn't show in ticket counts.
-\`\`\``,
-};
+```

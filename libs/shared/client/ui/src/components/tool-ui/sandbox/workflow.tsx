@@ -9,10 +9,15 @@ import { cn } from '../../../lib/utils';
 
 type RunSandboxWorkflowArgs = {
   goal: string;
+  sourceSkill?: string;
+  saveSkill?: boolean;
   steps: Array<{ name: string; command: string }>;
   timeoutMs?: number;
   image?: string;
   persistWorkspace?: boolean;
+  sessionId?: string;
+  keepAlive?: boolean;
+  closeSession?: boolean;
 };
 
 type SandboxWorkflowStepResult = {
@@ -38,6 +43,8 @@ type SandboxWorkflowResult = {
   skillSaved?: boolean;
   skillSaveError?: string | null;
   skillTitle?: string | null;
+  sessionId?: string;
+  sessionStatus?: 'active' | 'closed' | 'expired' | 'not_found';
 };
 
 function parseSandboxWorkflowResult(result: unknown): SandboxWorkflowResult | null {
@@ -73,12 +80,25 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
     const parsed = useMemo(() => parseSandboxWorkflowResult(result), [result]);
     const workflowSteps = args.steps || [];
     const resultSteps = parsed?.steps || [];
+    const totalSteps = workflowSteps.length;
+    const completedCount = Math.min(resultSteps.length, totalSteps);
+    const progressPercent = totalSteps
+      ? Math.round((completedCount / totalSteps) * 100)
+      : 0;
+    const currentIndex =
+      isRunning && completedCount < totalSteps ? completedCount : null;
     const truncated = parsed?.truncated ?? false;
     const durationMs = parsed?.durationMs ?? null;
     const exitCode = parsed?.exitCode ?? null;
     const summary = parsed?.summary || '';
     const skillSaved = parsed?.skillSaved;
     const skillSaveError = parsed?.skillSaveError;
+    const sessionId = parsed?.sessionId ?? args.sessionId;
+    const sessionStatus = parsed?.sessionStatus;
+    const sourceSkill =
+      typeof args.sourceSkill === 'string' && args.sourceSkill.trim().length > 0
+        ? args.sourceSkill.trim()
+        : null;
 
     return (
       <Card className="w-full max-w-3xl overflow-hidden my-2">
@@ -93,6 +113,45 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
                 {args.image}
               </Badge>
             )}
+            {sourceSkill && (
+              <Badge variant="outline" className="text-[10px]">
+                Skill: {sourceSkill}
+              </Badge>
+            )}
+            {args.saveSkill === false && (
+              <Badge variant="outline" className="text-[10px]">
+                Save skill: off
+              </Badge>
+            )}
+            {sessionId && (
+              <Badge variant="outline" className="text-[10px]">
+                Session {sessionId.slice(0, 8)}
+              </Badge>
+            )}
+            {sessionStatus && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-[10px]',
+                  sessionStatus === 'active' && 'text-status-success',
+                  sessionStatus === 'closed' && 'text-muted-foreground',
+                  sessionStatus === 'expired' && 'text-status-warning',
+                  sessionStatus === 'not_found' && 'text-destructive',
+                )}
+              >
+                {sessionStatus.replace('_', ' ')}
+              </Badge>
+            )}
+            {args.keepAlive && (
+              <Badge variant="outline" className="text-[10px]">
+                Keep alive
+              </Badge>
+            )}
+            {args.closeSession && (
+              <Badge variant="outline" className="text-[10px]">
+                Close session
+              </Badge>
+            )}
             {args.persistWorkspace !== undefined && (
               <Badge variant="outline" className="text-[10px]">
                 {args.persistWorkspace ? 'Persisted' : 'Ephemeral'}
@@ -104,6 +163,23 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
             <p className="text-xs text-muted-foreground mb-2">Goal</p>
             <p className="text-sm text-foreground">{args.goal}</p>
           </div>
+
+          {isRunning && totalSteps > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {completedCount}/{totalSteps} steps complete
+                </span>
+                <span>{progressPercent}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted">
+                <div
+                  className="h-2 rounded-full bg-foreground/60 transition-all"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {isRunning && (
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -117,6 +193,7 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
               const stepResult = resultSteps[index];
               const stepExit = stepResult?.exitCode ?? null;
               const stepTimedOut = stepResult?.timedOut ?? false;
+              const isCurrent = isRunning && currentIndex === index && !stepResult;
               const statusLabel = stepResult
                 ? stepTimedOut
                   ? 'Timed out'
@@ -125,9 +202,11 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
                     : stepExit === null
                       ? 'Failed'
                       : 'Failed'
-                : isRunning
-                  ? 'Pending'
-                  : 'Not run';
+                : isCurrent
+                  ? 'Running'
+                  : isRunning
+                    ? 'Pending'
+                    : 'Not run';
 
               return (
                 <div
@@ -145,10 +224,12 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
                         stepResult?.exitCode === 0 && 'text-status-success',
                         stepResult && stepResult.exitCode !== 0 && 'text-destructive',
                         stepTimedOut && 'text-status-warning',
+                        isCurrent && 'text-status-info',
                       )}
                     >
                       {statusLabel}
                     </Badge>
+                    {isCurrent && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                     {stepResult?.durationMs !== undefined && (
                       <span className="text-xs text-muted-foreground">
                         {stepResult.durationMs}ms
@@ -163,7 +244,7 @@ export const RunSandboxWorkflowToolUI = makeAssistantToolUI<
                       {step.command}
                     </pre>
                   </div>
-                  {!isRunning && stepResult && (
+                  {stepResult && (
                     <div className="mt-2 rounded border border-border/60 bg-background/80 p-2">
                       <p className="text-[11px] text-muted-foreground mb-1">
                         Output

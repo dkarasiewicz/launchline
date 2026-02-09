@@ -342,15 +342,60 @@ Active channels: ${state.channelInsights.filter((c) => c.activityLevel === 'high
       };
 
       try {
+        const topChannels = state.channels
+          .slice()
+          .sort((a, b) => b.memberCount - a.memberCount)
+          .slice(0, 5)
+          .map((channel) => `#${channel.name}`);
+        const activeChannels = state.channelInsights
+          .filter((channel) => channel.activityLevel === 'high')
+          .slice(0, 5)
+          .map((channel) => `#${channel.channelName}`);
+        const overviewSummary =
+          activeChannels.length > 0
+            ? `active ${activeChannels.slice(0, 3).join(', ')}`
+            : 'no high-activity channels yet';
+
+        const overviewMemory = await memoryService.saveMemory(ctx, {
+          namespace: 'team' as MemoryNamespace,
+          category: 'insight',
+          content: JSON.stringify({
+            source: 'onboarding',
+            platform: 'slack',
+            kind: 'overview',
+            counts: {
+              channels: state.channels.length,
+              members: state.members.length,
+              activeChannels: activeChannels.length,
+            },
+            topChannels,
+            activeChannels,
+            channelInsights: state.channelInsights,
+            teamInsights: state.teamInsights,
+            topicSummaries: state.topicSummaries,
+          }),
+          summary: `[Onboarding][Slack] Overview: ${state.channels.length} channels, ${state.members.length} members, ${overviewSummary}`,
+          importance: 0.8,
+          confidence: 1,
+          sourceEventIds: [],
+          relatedEntityIds: [],
+          relatedMemoryIds: [],
+          entityRefs: {},
+        });
+        memoriesCreated.push(overviewMemory.id);
+
         if (state.channels.length > 0) {
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
             content: JSON.stringify({
+              source: 'onboarding',
+              platform: 'slack',
+              kind: 'workspace',
               channels: state.channels,
               members: state.members,
             }),
-            summary: `Slack workspace: ${state.channels.length} channels`,
+            summary: `[Onboarding][Slack] Workspace: ${state.channels.length} channels`,
             importance: 0.7,
             confidence: 1,
             sourceEventIds: [],
@@ -365,8 +410,15 @@ Active channels: ${state.channelInsights.filter((c) => c.activityLevel === 'high
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
-            content: obs.observation,
-            summary: obs.title,
+            content: JSON.stringify({
+              source: 'onboarding',
+              platform: 'slack',
+              kind: 'observation',
+              title: obs.title,
+              observation: obs.observation,
+              relatedEntities: obs.relatedEntities || [],
+            }),
+            summary: `[Onboarding][Slack] ${obs.title}`,
             importance: obs.importance,
             confidence: 0.8,
             sourceEventIds: [],
@@ -375,6 +427,29 @@ Active channels: ${state.channelInsights.filter((c) => c.activityLevel === 'high
             entityRefs: {},
           });
           memoriesCreated.push(memory.id);
+        }
+
+        if (memoriesCreated.length > 0) {
+          const memoryIds = [...memoriesCreated];
+          const indexMemory = await memoryService.saveMemory(ctx, {
+            namespace: 'workspace' as MemoryNamespace,
+            category: 'settings',
+            content: JSON.stringify({
+              source: 'onboarding',
+              platform: 'slack',
+              kind: 'index',
+              runId: ctx.correlationId,
+              memoryIds,
+            }),
+            summary: `[Onboarding][Slack] Index: ${memoryIds.length} memories`,
+            importance: 0.2,
+            confidence: 1,
+            sourceEventIds: [],
+            relatedEntityIds: [],
+            relatedMemoryIds: [],
+            entityRefs: {},
+          });
+          memoriesCreated.push(indexMemory.id);
         }
 
         return { memoriesCreated, phase: 'complete' };

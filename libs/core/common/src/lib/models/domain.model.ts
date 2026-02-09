@@ -20,6 +20,7 @@ export enum Domain {
 
 export enum EventType {
   AUTH_USER_CREATED = 'AUTH_USER_CREATED',
+  WORKSPACE_CREATED = 'WORKSPACE_CREATED',
   WORKSPACE_MEMBER_INVITED = 'WORKSPACE_MEMBER_INVITED',
   WORKSPACE_MEMBER_JOINED = 'WORKSPACE_MEMBER_JOINED',
   // Integration events
@@ -54,6 +55,20 @@ export class AuthUserCreatedEventPayload {
 
   @IsEnum(UserIdentifierType)
   identifierType!: UserIdentifierType;
+
+  @IsDateString()
+  emittedAt!: string;
+}
+
+export class WorkspaceCreatedEventPayload {
+  @IsUUID()
+  workspaceId!: string;
+
+  @IsString()
+  workspaceName!: string;
+
+  @IsDateString()
+  createdAt!: string;
 
   @IsDateString()
   emittedAt!: string;
@@ -177,6 +192,7 @@ export class IntegrationWebhookReceivedEventPayload {
 
 export type EventPayload =
   | AuthUserCreatedEventPayload
+  | WorkspaceCreatedEventPayload
   | WorkspaceMemberInvitedEventPayload
   | WorkspaceMemberJoinedEventPayload
   | IntegrationConnectedEventPayload
@@ -237,6 +253,29 @@ export class AuthUserCreatedEvent extends DomainEvent<AuthUserCreatedEventPayloa
     );
 
     this.payload = plainToInstance(AuthUserCreatedEventPayload, payload);
+  }
+}
+
+export class WorkspaceCreatedEvent extends DomainEvent<WorkspaceCreatedEventPayload> {
+  @Type(() => WorkspaceCreatedEventPayload)
+  payload!: WorkspaceCreatedEventPayload;
+
+  constructor(
+    payload: Pick<
+      WorkspaceCreatedEventPayload,
+      keyof WorkspaceCreatedEventPayload
+    >,
+    userId?: string,
+  ) {
+    super(
+      randomUUID(),
+      EventVersion.V1,
+      EventType.WORKSPACE_CREATED,
+      Domain.WORKSPACE,
+      userId,
+    );
+
+    this.payload = plainToInstance(WorkspaceCreatedEventPayload, payload);
   }
 }
 
@@ -337,6 +376,7 @@ export class IntegrationWebhookReceivedEvent extends DomainEvent<IntegrationWebh
 
 export type DomainEventType =
   | AuthUserCreatedEvent
+  | WorkspaceCreatedEvent
   | WorkspaceMemberInvitedEvent
   | WorkspaceMemberJoinedEvent
   | IntegrationConnectedEvent
@@ -344,6 +384,7 @@ export type DomainEventType =
 
 export const EventTypeToDomainEventMap = {
   [EventType.AUTH_USER_CREATED]: AuthUserCreatedEvent,
+  [EventType.WORKSPACE_CREATED]: WorkspaceCreatedEvent,
   [EventType.WORKSPACE_MEMBER_INVITED]: WorkspaceMemberInvitedEvent,
   [EventType.WORKSPACE_MEMBER_JOINED]: WorkspaceMemberJoinedEvent,
   [EventType.INTEGRATION_CONNECTED]: IntegrationConnectedEvent,

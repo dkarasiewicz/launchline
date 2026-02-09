@@ -7,6 +7,7 @@ import {
   type MemoryItem,
   type MemoryItemInput,
   MemoryItemInputSchema,
+  MemoryNamespaceSchema,
   type MemoryNamespace,
   type MemorySearchQuery,
 } from '../types';
@@ -75,6 +76,8 @@ export class MemoryService {
       `Saved memory ${id} (${validatedMemory.category}) in ${validatedMemory.namespace} for workspace ${ctx.workspaceId}`,
     );
 
+    await this.upsertMemoryFile(ctx.workspaceId, fullMemory);
+
     return fullMemory;
   }
 
@@ -106,6 +109,8 @@ export class MemoryService {
     });
 
     this.logger.debug(`[MemoryService] Updated memory ${memoryId}`);
+
+    await this.upsertMemoryFile(ctx.workspaceId, updated);
 
     return updated;
   }
@@ -237,6 +242,72 @@ export class MemoryService {
       .slice(0, limit);
   }
 
+  async backfillMemoryFiles(
+    workspaceId: string,
+    options?: { limitPerNamespace?: number },
+  ): Promise<{ namespaces: number; memories: number }> {
+    const limit = options?.limitPerNamespace ?? 200;
+    let total = 0;
+
+    for (const ns of MemoryNamespaceSchema.options) {
+      const memories = await this.listMemories(workspaceId, ns, { limit });
+      for (const memory of memories) {
+        await this.upsertMemoryFile(workspaceId, memory);
+        total += 1;
+      }
+    }
+
+    return { namespaces: MemoryNamespaceSchema.options.length, memories: total };
+  }
+
+  async archiveOnboardingMemories(
+    ctx: GraphContext,
+    platform: 'slack' | 'linear' | 'github',
+    options?: { limit?: number },
+  ): Promise<{ scanned: number; archived: number }> {
+    const limit = options?.limit ?? 2000;
+    const platformLabel =
+      platform === 'github' ? 'GitHub' : platform === 'slack' ? 'Slack' : 'Linear';
+    const queries = [platformLabel, platform, 'onboarding'];
+    const namespaces = MemoryNamespaceSchema.options;
+    let scanned = 0;
+    let archived = 0;
+
+    for (const ns of namespaces) {
+      const namespace = this.buildNamespace(ctx.workspaceId, ns);
+      const candidates = new Map<string, MemoryItem>();
+
+      for (const query of queries) {
+        const results = await this.store.search(namespace, { query, limit });
+        for (const item of results) {
+          const memory = item.value as MemoryItem;
+          if (memory?.id) {
+            candidates.set(memory.id, memory);
+          }
+        }
+      }
+
+      for (const memory of candidates.values()) {
+        scanned += 1;
+        if (!this.isOnboardingMemory(memory, platform)) {
+          continue;
+        }
+
+        const updated = await this.updateMemory(
+          ctx,
+          memory.id,
+          memory.namespace ?? ns,
+          { archivedAt: new Date() },
+        );
+        if (updated) {
+          archived += 1;
+        }
+      }
+    }
+
+    return { scanned, archived };
+  }
+
   private shouldIncludeMemory(
     memory: MemoryItem,
     query: MemorySearchQuery,
@@ -250,5 +321,137 @@ export class MemoryService {
     }
 
     return !(query.minImportance && memory.importance < query.minImportance);
+  }
+
+  private async upsertMemoryFile(
+    workspaceId: string,
+    memory: MemoryItem,
+  ): Promise<void> {
+    try {
+      const namespace = this.buildFilesystemNamespace(workspaceId);
+      const memoryNamespace = memory.namespace || 'workspace';
+      const filePath = `/memories/${memoryNamespace}/${memory.id}.md`;
+      const content = this.formatMemoryMarkdown(memory);
+      const now = new Date();
+      const createdAt = this.ensureDate(memory.createdAt || now);
+      const updatedAt = this.ensureDate(memory.updatedAt || now);
+
+      await this.store.put(namespace, filePath, {
+        content: content.split('\n'),
+        created_at: createdAt.toISOString(),
+        modified_at: updatedAt.toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, memoryId: memory.id, workspaceId },
+        '[MemoryService] Failed to sync memory file',
+      );
+    }
+  }
+
+  private buildFilesystemNamespace(workspaceId: string): string[] {
+    return [workspaceId, 'filesystem'];
+  }
+
+  private formatMemoryMarkdown(memory: MemoryItem): string {
+    const metadata = [
+      `id: ${memory.id}`,
+      `namespace: ${memory.namespace}`,
+      `category: ${memory.category}`,
+      `importance: ${memory.importance}`,
+      `confidence: ${memory.confidence}`,
+      `createdAt: ${this.ensureDate(memory.createdAt).toISOString()}`,
+      `updatedAt: ${this.ensureDate(memory.updatedAt).toISOString()}`,
+      memory.archivedAt
+        ? `archivedAt: ${this.ensureDate(memory.archivedAt).toISOString()}`
+        : null,
+      memory.expiresAt
+        ? `expiresAt: ${this.ensureDate(memory.expiresAt).toISOString()}`
+        : null,
+      `sourceEventIds: ${JSON.stringify(memory.sourceEventIds ?? [])}`,
+      `relatedEntityIds: ${JSON.stringify(memory.relatedEntityIds ?? [])}`,
+      `relatedMemoryIds: ${JSON.stringify(memory.relatedMemoryIds ?? [])}`,
+      `entityRefs: ${JSON.stringify(memory.entityRefs ?? {})}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return `---\n${metadata}\n---\n\nSummary:\n${memory.summary}\n\nContent:\n${memory.content}\n`;
+  }
+
+  private ensureDate(value: Date | string): Date {
+    if (value instanceof Date) {
+      return value;
+    }
+    return new Date(value);
+  }
+
+  private isOnboardingMemory(
+    memory: MemoryItem,
+    platform: 'slack' | 'linear' | 'github',
+  ): boolean {
+    if (!memory) {
+      return false;
+    }
+
+    const content = memory.content || '';
+    const summary = memory.summary || '';
+    const platformLabel =
+      platform === 'github' ? 'GitHub' : platform === 'slack' ? 'Slack' : 'Linear';
+
+    if (summary.includes('[Onboarding]') && summary.includes(platformLabel)) {
+      return true;
+    }
+
+    if (summary.toLowerCase().includes(`${platformLabel.toLowerCase()} onboarding`)) {
+      return true;
+    }
+
+    if (summary.includes(`${platformLabel} workspace`)) {
+      return true;
+    }
+
+    if (summary.includes(`${platformLabel} repositories`)) {
+      return true;
+    }
+
+    if (summary.includes('Linear organization') && platform === 'linear') {
+      return true;
+    }
+
+    if (summary.includes('Linear onboarding') && platform === 'linear') {
+      return true;
+    }
+
+    const parsed = this.tryParseJson(content);
+    if (parsed && typeof parsed === 'object') {
+      const record = parsed as Record<string, unknown>;
+      const source = typeof record.source === 'string' ? record.source : '';
+      const parsedPlatform =
+        typeof record.platform === 'string' ? record.platform : '';
+      const type = typeof record.type === 'string' ? record.type : '';
+
+      if (source === 'onboarding' && parsedPlatform === platform) {
+        return true;
+      }
+
+      if (platform === 'linear' && type.startsWith('linear_')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private tryParseJson(value: string): unknown | null {
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
   }
 }

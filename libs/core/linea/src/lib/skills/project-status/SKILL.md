@@ -1,8 +1,8 @@
-export const projectStatusSkill = {
-  name: 'project-status',
-  description:
-    'Use this skill when generating project updates, status reports, or stakeholder communications.',
-  content: `
+---
+name: project-status
+description: Use this skill when generating project updates, status reports, or stakeholder communications.
+---
+
 # Project Status Skill
 
 ## Overview
@@ -22,15 +22,15 @@ This skill helps generate project status updates and stakeholder communications.
 
 Collect information from multiple sources:
 
-1. \`get_linear_cycle_status\` - Sprint progress
-2. \`get_linear_project_status\` - Project health
-3. \`get_linear_issues(filter: "blockers")\` - Current blockers
-4. \`search_memories(query: "decision shipped completed")\` - Recent wins
+1. `get_linear_cycle_status` - Sprint progress
+2. `get_linear_project_status` - Project health
+3. `get_linear_issues(filter: "blockers")` - Current blockers
+4. `search_memories(query: "decision shipped completed")` - Recent wins
 
 ### 2. Structure the Update
 
 **Executive format (for stakeholders):**
-\`\`\`
+```
 ## Summary
   [1-2 sentences: what matters most]
 
@@ -44,10 +44,10 @@ Collect information from multiple sources:
 
 ## Key Decisions
   [Recent decisions and their impact]
-\`\`\`
+```
 
 **Team format (for standups):**
-\`\`\`
+```
 ## Sprint Status
   [X]% complete | [Y] days remaining
 
@@ -56,7 +56,7 @@ Collect information from multiple sources:
 
 ## Today's Focus
   [Top priorities]
-\`\`\`
+```
 
 ### 3. Tailor to Audience
 
@@ -76,7 +76,7 @@ Don't hide problems. Present them with:
 
 ## Example Sprint Status
 
-\`\`\`
+```
 ## Sprint 23 Status
 
 Progress: 65% complete (6 days remaining)
@@ -100,5 +100,4 @@ Progress: 65% complete (6 days remaining)
 **Key Decision:**
 - Decided to use PostgreSQL for new data model
 (Rationale: team expertise, query patterns)
-\`\`\``,
-};
+```

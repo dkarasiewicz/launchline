@@ -22,6 +22,10 @@ export class IntegrationFacade {
     return integrations.filter((i) => i.status === IntegrationStatus.ACTIVE);
   }
 
+  async getIntegration(integrationId: string) {
+    return this.integrationService.getIntegration(integrationId);
+  }
+
   async getAccessToken(integrationId: string): Promise<string | null> {
     const integration = await this.integrationService.getIntegration(
       integrationId,

@@ -64,6 +64,7 @@ import { LineaJobsService } from '../jobs/linea-jobs.service';
 import { AgentPromptService } from './agent-prompt.service';
 import { TeamInsightsService } from './team-insights.service';
 import { SandboxService } from './sandbox.service';
+import { WorkspaceSkillsService } from './workspace-skills.service';
 
 function getWorkspaceId(config: RunnableConfig): string {
   const configurable = config?.configurable as
@@ -142,6 +143,7 @@ export class ToolsFactory {
     private readonly agentPromptService: AgentPromptService,
     private readonly teamInsightsService: TeamInsightsService,
     private readonly sandboxService: SandboxService,
+    private readonly workspaceSkillsService: WorkspaceSkillsService,
     @Inject(LINEA_MODEL_FAST)
     private readonly modelFast: BaseChatModel,
     @Inject(LINEA_STORE)
@@ -221,7 +223,6 @@ export class ToolsFactory {
       this.createThinkTool(),
       this.createScheduleTaskTool(),
       this.createScheduleStandupDigestTool(),
-      this.createRunSandboxCommandTool(),
       this.createRunSandboxWorkflowTool(),
     ];
   }
@@ -267,17 +268,30 @@ export class ToolsFactory {
 
   private createRunSandboxWorkflowTool(): StructuredToolInterface {
     const sandboxService = this.sandboxService;
-    const memoryService = this.memoryService;
+    const workspaceSkillsService = this.workspaceSkillsService;
     const logger = this.logger;
 
     return tool(
-      async ({ goal, steps, timeoutMs, image, persistWorkspace }, config) => {
+      async (
+        {
+          goal,
+          sourceSkill,
+          saveSkill,
+          steps,
+          timeoutMs,
+          image,
+          persistWorkspace,
+          sessionId,
+          keepAlive,
+          closeSession,
+        },
+        config,
+      ) => {
         const workspaceId = getWorkspaceId(config);
-        const userId = getUserId(config);
-        const correlationId = getToolCallId(config);
+        const resolvedSteps = steps ?? [];
 
         try {
-          if (this.requiresSandboxWorkflowApproval(goal, steps)) {
+          if (!closeSession && this.requiresSandboxWorkflowApproval(goal, resolvedSteps)) {
             return JSON.stringify({
               goal,
               steps: [],
@@ -291,49 +305,50 @@ export class ToolsFactory {
               skillSaveError: null,
               skillTitle: null,
               requiresApproval: true,
+              sessionId,
             });
           }
 
           const result = await sandboxService.runWorkflow({
             workspaceId,
             goal,
-            steps,
+            steps: resolvedSteps,
             timeoutMs,
             image,
             persistWorkspace,
+            sessionId,
+            keepAlive,
+            closeSession,
           });
 
           let skillSaved = false;
           let skillSaveError: string | null = null;
           let skillTitle: string | null = null;
 
-          if (result.success) {
+          const hasSourceSkill =
+            typeof sourceSkill === 'string' && sourceSkill.trim().length > 0;
+          const shouldSaveSkill =
+            result.success &&
+            !closeSession &&
+            resolvedSteps.length > 0 &&
+            (saveSkill ?? !hasSourceSkill);
+
+          if (shouldSaveSkill) {
+            const targetSkillName = hasSourceSkill ? sourceSkill!.trim() : goal;
             const skill = this.buildSandboxWorkflowSkill({
+              title: targetSkillName,
               goal,
-              steps,
+              steps: resolvedSteps,
               image,
               persistWorkspace,
             });
-            skillTitle = skill.title;
+            skillTitle = targetSkillName;
             try {
-              await memoryService.saveMemory(
-                {
-                  workspaceId,
-                  userId,
-                  correlationId,
-                },
-                {
-                  namespace: 'workspace',
-                  category: 'skill',
-                  content: skill.content,
-                  summary: `Sandbox workflow: ${skill.title}`,
-                  importance: 0.6,
-                  confidence: 0.85,
-                  sourceEventIds: [],
-                  relatedEntityIds: [],
-                  relatedMemoryIds: [],
-                  entityRefs: {},
-                },
+              await workspaceSkillsService.upsertWorkspaceSkill(
+                workspaceId,
+                targetSkillName,
+                skill.content,
+                hasSourceSkill ? { id: targetSkillName } : undefined,
               );
               skillSaved = true;
             } catch (error) {
@@ -374,6 +389,7 @@ export class ToolsFactory {
             skillSaveError: null,
             skillTitle: null,
             requiresApproval: false,
+            sessionId,
           });
         }
       },
@@ -386,19 +402,25 @@ export class ToolsFactory {
   }
 
   private buildSandboxWorkflowSkill(input: {
+    title?: string;
     goal: string;
     steps: Array<{ name: string; command: string }>;
     image?: string;
     persistWorkspace?: boolean;
   }): { title: string; content: string } {
     const trimmedGoal = input.goal.trim();
-    const title = trimmedGoal.length > 0 ? trimmedGoal : 'Sandbox Workflow';
+    const resolvedTitle =
+      input.title && input.title.trim().length > 0
+        ? input.title.trim()
+        : trimmedGoal.length > 0
+          ? trimmedGoal
+          : 'Sandbox Workflow';
     const persistWorkspace = input.persistWorkspace ?? true;
     const lines: string[] = [];
 
-    lines.push(`# ${title}`);
+    lines.push(`# ${resolvedTitle}`);
     lines.push('');
-    lines.push(`Goal: ${trimmedGoal || title}`);
+    lines.push(`Goal: ${trimmedGoal || resolvedTitle}`);
     lines.push('');
     lines.push('## Preconditions');
     lines.push(
@@ -429,7 +451,7 @@ export class ToolsFactory {
     lines.push('- Re-run the failing step alone to inspect output.');
     lines.push('- If installs fail, check network/registry access.');
 
-    return { title, content: lines.join('\n') };
+    return { title: resolvedTitle, content: lines.join('\n') };
   }
 
   private requiresSandboxWorkflowApproval(

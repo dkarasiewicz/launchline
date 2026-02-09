@@ -18,48 +18,7 @@ import {
   InboxAssistantThinking,
 } from './inbox-messages';
 
-// Tool UIs - All registered tools
-import {
-  // Approval tools
-  UpdateLinearTicketToolUI,
-  SendSlackMessageToolUI,
-  InternetSearchToolUI,
-  CreateGitHubIssueToolUI,
-  ThinkToolUI,
-  // Plan tool
-  WriteTodosToolUI,
-  // Memory tools
-  SearchMemoriesTool,
-  SaveMemoryTool,
-  GetBlockersTool,
-  GetDecisionsTool,
-  ResolveIdentityTool,
-  // Inbox tools
-  GetInboxItemsTool,
-  GetWorkspaceStatusTool,
-  // Linear skills
-  GetLinearIssuesTool,
-  GetLinearIssueDetailsTool,
-  SearchLinearIssuesTool,
-  GetLinearProjectStatusTool,
-  GetLinearTeamWorkloadTool,
-  GetLinearCycleStatusTool,
-  AddLinearCommentTool,
-  CreateLinearIssueTool,
-  // Project update
-  GenerateProjectUpdateTool,
-  // Google workspace tools
-  GetLatestEmailsToolUI,
-  ReplyToEmailToolUI,
-  GetCalendarEventsToolUI,
-  ScheduleCalendarEventToolUI,
-  RunSandboxCommandToolUI,
-  GetGitHubPullRequestsToolUI,
-  GetGitHubPullRequestDetailsToolUI,
-  GetGitHubIssuesToolUI,
-  SearchGitHubIssuesToolUI,
-  GetGitHubCommitsToolUI,
-} from '../tool-ui';
+import { LineaToolRegistry } from '../tool-ui';
 
 // Types
 export type InboxItemType =
@@ -301,7 +260,7 @@ export function InboxLineaThread({ itemId, itemContext }: InboxThreadProps) {
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
 
-      <LineaThreadTools />
+      <LineaToolRegistry />
     </div>
   );
 }
@@ -346,56 +305,8 @@ export function GeneralLineaThread({ threadId }: { threadId: string }) {
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
 
-      <LineaThreadTools />
+      <LineaToolRegistry />
     </div>
-  );
-}
-
-function LineaThreadTools() {
-  return (
-    <>
-      {/* Memory tools */}
-      <SearchMemoriesTool />
-      <SaveMemoryTool />
-      <GetBlockersTool />
-      <GetDecisionsTool />
-      <ResolveIdentityTool />
-      {/* Inbox tools */}
-      <GetInboxItemsTool />
-      <GetWorkspaceStatusTool />
-      {/* Linear skills */}
-      <GetLinearIssuesTool />
-      <GetLinearIssueDetailsTool />
-      <SearchLinearIssuesTool />
-      <GetLinearProjectStatusTool />
-      <GetLinearTeamWorkloadTool />
-      <GetLinearCycleStatusTool />
-      <AddLinearCommentTool />
-      <CreateLinearIssueTool />
-      {/* Project update */}
-      <GenerateProjectUpdateTool />
-      {/* Google workspace */}
-      <GetLatestEmailsToolUI />
-      <ReplyToEmailToolUI />
-      <GetCalendarEventsToolUI />
-      <ScheduleCalendarEventToolUI />
-      {/* GitHub tools */}
-      <GetGitHubPullRequestsToolUI />
-      <GetGitHubPullRequestDetailsToolUI />
-      <GetGitHubIssuesToolUI />
-      <SearchGitHubIssuesToolUI />
-      <GetGitHubCommitsToolUI />
-      {/* Sandbox automation */}
-      <RunSandboxCommandToolUI />
-      {/* Human-in-the-loop Approval UIs */}
-      <UpdateLinearTicketToolUI />
-      <SendSlackMessageToolUI />
-      <InternetSearchToolUI />
-      <CreateGitHubIssueToolUI />
-      <ThinkToolUI />
-      {/* DeepAgents built-in write_todos for task planning */}
-      <WriteTodosToolUI />
-    </>
   );
 }
 

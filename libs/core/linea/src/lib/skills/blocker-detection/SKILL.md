@@ -1,8 +1,9 @@
-export const blockerDetectionSkill = {
-  name: 'blocker-detection',
-  description:
-    'Use this skill when investigating blockers, stalled work, or anything preventing progress.',
-  content: `# Blocker Detection Skill
+---
+name: blocker-detection
+description: Use this skill when investigating blockers, stalled work, or anything preventing progress.
+---
+
+# Blocker Detection Skill
 
 ## Overview
 
@@ -21,9 +22,9 @@ This skill helps identify and resolve blockers before they derail projects.
 
 Use these tools in order:
 
-1. \`get_linear_issues(filter: "blockers")\` - Explicitly blocked items
-2. \`get_linear_issues(filter: "stalled")\` - Work that stopped moving
-3. \`search_memories(query: "blocked waiting dependency")\` - Historical context
+1. `get_linear_issues(filter: "blockers")` - Explicitly blocked items
+2. `get_linear_issues(filter: "stalled")` - Work that stopped moving
+3. `search_memories(query: "blocked waiting dependency")` - Historical context
 
 ### 2. Analyzing a Blocker
 
@@ -53,7 +54,7 @@ Always provide actionable next steps:
 
 ## Example Response
 
-\`\`\`
+```
 3 Active Blockers:
 
 1. **ABC-123** blocked 5 days
@@ -75,5 +76,4 @@ Always provide actionable next steps:
 1. Escalate security review
 2. Check in with Mike
 3. Monitor ABC-100 progress
-\`\`\``,
-};
+```

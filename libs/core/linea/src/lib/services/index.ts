@@ -20,6 +20,7 @@ export {
 } from './identity-linking-graphs.service';
 export { AgentFactory, type LineaAgentState } from './agent.factory';
 export { SkillsFactory, type SkillFile, type FileData } from './skills.factory';
+export { WorkspaceSkillsService } from './workspace-skills.service';
 export { TeamInsightsService } from './team-insights.service';
 export { SandboxService } from './sandbox.service';
 export { HeartbeatSettingsService } from './heartbeat-settings.service';

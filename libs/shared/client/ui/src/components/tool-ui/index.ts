@@ -66,3 +66,6 @@ export {
 // Sandbox tools
 export { RunSandboxCommandToolUI } from './sandbox/sandbox';
 export { RunSandboxWorkflowToolUI } from './sandbox/workflow';
+
+// Tool registry
+export { LineaToolRegistry } from './registry';

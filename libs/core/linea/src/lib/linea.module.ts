@@ -22,6 +22,7 @@ import {
   IdentityLinkingGraphsService,
   AgentFactory,
   SkillsFactory,
+  WorkspaceSkillsService,
   TeamInsightsService,
   SandboxService,
   HeartbeatSettingsService,
@@ -57,6 +58,7 @@ import { LineaJobsProcessor } from './jobs/linea-jobs.processor';
     // Factories
     LinearSkillsFactory,
     SkillsFactory,
+    WorkspaceSkillsService,
     ToolsFactory,
     SubagentsFactory,
     AgentFactory,

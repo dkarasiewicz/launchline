@@ -26,6 +26,14 @@ const GetLinearIssuesSchema = z.object({
     .default('recent')
     .describe('Filter for issues to retrieve'),
   teamId: z.string().optional().describe('Specific team ID to filter by'),
+  assignee: z
+    .string()
+    .optional()
+    .describe('Assignee name or email to filter by'),
+  assigneeId: z
+    .string()
+    .optional()
+    .describe('Assignee ID to filter by (preferred when known)'),
   limit: z.number().default(10).describe('Maximum number of issues to return'),
 });
 
@@ -71,7 +79,10 @@ const CreateLinearIssueSchema = z.object({
     .string()
     .optional()
     .describe('Issue description (markdown supported)'),
-  teamId: z.string().optional().describe('Team ID (defaults to first team)'),
+  teamId: z
+    .string()
+    .optional()
+    .describe('Team ID, key, or name (defaults to first team)'),
   projectId: z.string().optional().describe('Project ID'),
   assigneeId: z.string().optional().describe('Assignee user ID'),
   priority: z
@@ -97,6 +108,17 @@ function getWorkspaceId(config: RunnableConfig): string {
     | Record<string, unknown>
     | undefined;
   return (configurable?.['workspaceId'] as string) || 'default';
+}
+
+type TeamSummary = {
+  id: string;
+  name?: string | null;
+  key?: string | null;
+};
+
+function formatTeamLabel(team: TeamSummary) {
+  const name = team.name?.trim() || 'Unnamed team';
+  return team.key ? `${name} (${team.key})` : name;
 }
 
 @Injectable()
@@ -163,7 +185,7 @@ export class LinearSkillsFactory {
     const logger = this.logger;
 
     return tool(
-      async ({ filter, teamId, limit }, config) => {
+      async ({ filter, teamId, assignee, assigneeId, limit }, config) => {
         const workspaceId = getWorkspaceId(config);
         const client = await getClient(workspaceId);
 
@@ -172,27 +194,101 @@ export class LinearSkillsFactory {
         }
 
         try {
+          const resolvedAssigneeId = await (async () => {
+            if (assigneeId) {
+              return assigneeId;
+            }
+            if (!assignee) {
+              return undefined;
+            }
+
+            const normalized = assignee.trim().toLowerCase();
+            if (!normalized) {
+              return undefined;
+            }
+
+            const usersResponse = await client.users({ first: 200 });
+            const users = usersResponse.nodes || [];
+
+            const exact = users.find((user) => {
+              const name = user.name?.toLowerCase();
+              const display = user.displayName?.toLowerCase();
+              const email = user.email?.toLowerCase();
+              return (
+                name === normalized ||
+                display === normalized ||
+                email === normalized
+              );
+            });
+            if (exact) {
+              return exact.id;
+            }
+
+            const partialMatches = users.filter((user) => {
+              const name = user.name?.toLowerCase() || '';
+              const display = user.displayName?.toLowerCase() || '';
+              const email = user.email?.toLowerCase() || '';
+              return (
+                name.includes(normalized) ||
+                display.includes(normalized) ||
+                email.includes(normalized)
+              );
+            });
+
+            if (partialMatches.length === 1) {
+              return partialMatches[0].id;
+            }
+
+            if (partialMatches.length > 1) {
+              const sample = partialMatches
+                .slice(0, 5)
+                .map((user) => `${user.name} (${user.email || 'no email'})`)
+                .join(', ');
+              return `__AMBIGUOUS__:${sample}`;
+            }
+
+            return `__NOT_FOUND__:${assignee}`;
+          })();
+
+          if (resolvedAssigneeId?.startsWith('__NOT_FOUND__')) {
+            return `No Linear user found matching "${assignee}". Try a full name, email, or provide assigneeId.`;
+          }
+
+          if (resolvedAssigneeId?.startsWith('__AMBIGUOUS__')) {
+            const sample = resolvedAssigneeId.replace('__AMBIGUOUS__:', '');
+            return `Multiple users match "${assignee}". Please provide assigneeId or a more specific name. Matches: ${sample}`;
+          }
+
+          const assigneeFilter = resolvedAssigneeId
+            ? { assignee: { id: { eq: resolvedAssigneeId } } }
+            : {};
+          const teamFilter = teamId ? { team: { id: { eq: teamId } } } : {};
           let issues;
           const viewer = await client.viewer;
 
           switch (filter) {
             case 'my_issues':
-              issues = await viewer.assignedIssues({
-                first: limit,
-                filter: { state: { type: { nin: ['completed', 'canceled'] } } },
-              });
-              break;
-
-            case 'team_issues': {
-              if (teamId) {
-                const team = await client.team(teamId);
-                issues = await team.issues({
+              if (resolvedAssigneeId) {
+                issues = await client.issues({
+                  first: limit,
+                  filter: {
+                    state: { type: { nin: ['completed', 'canceled'] } },
+                    ...assigneeFilter,
+                    ...teamFilter,
+                  },
+                });
+              } else {
+                issues = await viewer.assignedIssues({
                   first: limit,
                   filter: {
                     state: { type: { nin: ['completed', 'canceled'] } },
                   },
                 });
-              } else {
+              }
+              break;
+
+            case 'team_issues': {
+              if (!teamId && !resolvedAssigneeId) {
                 const teams = await viewer.teams();
                 const firstTeam = teams.nodes[0];
                 if (!firstTeam) {
@@ -202,6 +298,15 @@ export class LinearSkillsFactory {
                   first: limit,
                   filter: {
                     state: { type: { nin: ['completed', 'canceled'] } },
+                  },
+                });
+              } else {
+                issues = await client.issues({
+                  first: limit,
+                  filter: {
+                    state: { type: { nin: ['completed', 'canceled'] } },
+                    ...teamFilter,
+                    ...assigneeFilter,
                   },
                 });
               }
@@ -214,6 +319,8 @@ export class LinearSkillsFactory {
                 first: limit,
                 filter: {
                   state: { type: { nin: ['completed', 'canceled'] } },
+                  ...teamFilter,
+                  ...assigneeFilter,
                 },
               });
               // Filter client-side for blocked mentions
@@ -236,6 +343,8 @@ export class LinearSkillsFactory {
                 filter: {
                   state: { type: { eq: 'started' } },
                   updatedAt: { lt: stalledDate },
+                  ...teamFilter,
+                  ...assigneeFilter,
                 },
               });
               break;
@@ -245,6 +354,10 @@ export class LinearSkillsFactory {
             default:
               issues = await client.issues({
                 first: limit,
+                filter: {
+                  ...teamFilter,
+                  ...assigneeFilter,
+                },
               });
               break;
           }
@@ -284,7 +397,8 @@ export class LinearSkillsFactory {
 - team_issues: All issues for a team
 - blockers: Issues marked as blocked
 - stalled: Issues with no recent updates (7+ days)
-- recent: Recently updated issues`,
+- recent: Recently updated issues
+Supports optional assignee filtering via assignee (name/email) or assigneeId.`,
         schema: GetLinearIssuesSchema,
       },
     );
@@ -802,21 +916,63 @@ ${scopedIssues.nodes.length > 0 ? `\n⚠️ **${scopedIssues.nodes.length} issue
         }
 
         try {
-          let resolvedTeamId = teamId;
-          if (!resolvedTeamId) {
-            const viewer = await client.viewer;
-            const teams = await viewer.teams();
-            const firstTeam = teams.nodes[0];
-            if (!firstTeam) {
-              return 'No teams found in Linear. Provide a teamId to create the issue.';
+          const viewer = await client.viewer;
+          const teamsResponse = await viewer.teams();
+          const teams = teamsResponse.nodes ?? [];
+          if (!teams.length) {
+            return 'No teams found in Linear. Provide a teamId to create the issue.';
+          }
+
+          const normalizedTeamInput = teamId?.trim();
+          const defaultTeam = teams[0] as TeamSummary;
+          let resolvedTeam = defaultTeam;
+          let teamNotice: string | undefined;
+
+          if (normalizedTeamInput) {
+            const lowerInput = normalizedTeamInput.toLowerCase();
+            const exactMatch = teams.find(
+              (team) => team.id === normalizedTeamInput,
+            );
+            const keyMatch = teams.find(
+              (team) => team.key?.toLowerCase() === lowerInput,
+            );
+            const nameMatch = teams.find(
+              (team) => team.name?.toLowerCase() === lowerInput,
+            );
+
+            if (exactMatch || keyMatch || nameMatch) {
+              resolvedTeam = (exactMatch || keyMatch || nameMatch) as TeamSummary;
+              if (!exactMatch) {
+                teamNotice = `Resolved team "${teamId}" to ${formatTeamLabel(resolvedTeam)}.`;
+              }
+            } else {
+              const partialMatches = teams.filter((team) => {
+                const name = team.name?.toLowerCase() ?? '';
+                const key = team.key?.toLowerCase() ?? '';
+                return name.includes(lowerInput) || key.includes(lowerInput);
+              });
+
+              if (partialMatches.length === 1) {
+                resolvedTeam = partialMatches[0] as TeamSummary;
+                teamNotice = `Resolved team "${teamId}" to ${formatTeamLabel(resolvedTeam)}.`;
+              } else if (partialMatches.length > 1) {
+                const matches = partialMatches
+                  .map((team) => formatTeamLabel(team as TeamSummary))
+                  .join(', ');
+                return `Multiple teams match "${teamId}". Provide a team ID or key. Matches: ${matches}`;
+              } else {
+                const options = teams
+                  .map((team) => formatTeamLabel(team as TeamSummary))
+                  .join(', ');
+                teamNotice = `Team "${teamId}" not found. Using default team ${formatTeamLabel(defaultTeam)}. Available teams: ${options}.`;
+              }
             }
-            resolvedTeamId = firstTeam.id;
           }
 
           const response = await client.createIssue({
             title,
             description,
-            teamId: resolvedTeamId,
+            teamId: resolvedTeam.id,
             projectId,
             assigneeId,
             priority,
@@ -829,22 +985,29 @@ ${scopedIssues.nodes.length > 0 ? `\n⚠️ **${scopedIssues.nodes.length} issue
 
           const issue = await response.issue;
 
-          return JSON.stringify(
-            {
-              success: true,
-              action: 'create_linear_issue',
-              id: issue.id,
-              identifier: issue.identifier,
-              title: issue.title,
-              url: issue.url,
-              teamId: issue.teamId,
-              projectId: issue.projectId,
-              assigneeId: issue.assigneeId,
-              priority: issue.priority,
+          const payload: Record<string, unknown> = {
+            success: true,
+            action: 'create_linear_issue',
+            id: issue.id,
+            identifier: issue.identifier,
+            title: issue.title,
+            url: issue.url,
+            teamId: issue.teamId,
+            projectId: issue.projectId,
+            assigneeId: issue.assigneeId,
+            priority: issue.priority,
+            resolvedTeam: {
+              id: resolvedTeam.id,
+              name: resolvedTeam.name,
+              key: resolvedTeam.key,
             },
-            null,
-            2,
-          );
+          };
+
+          if (teamNotice) {
+            payload.notice = teamNotice;
+          }
+
+          return JSON.stringify(payload, null, 2);
         } catch (error) {
           logger.error(
             { err: error, workspaceId, title },

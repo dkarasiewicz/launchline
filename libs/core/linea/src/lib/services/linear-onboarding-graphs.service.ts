@@ -1499,21 +1499,68 @@ Focus on insights that would help a team lead or project manager make better dec
         userId: state.userId,
         correlationId: state.correlationId,
       };
+      const buildContent = (kind: string, data: Record<string, unknown>) =>
+        JSON.stringify({
+          source: 'onboarding',
+          platform: 'linear',
+          kind,
+          ...data,
+        });
 
       try {
+        const topProjects = state.projects
+          .slice()
+          .sort((a, b) => b.progress - a.progress)
+          .slice(0, 5)
+          .map((project) => ({
+            id: project.id,
+            name: project.name,
+            state: project.state,
+            progress: project.progress,
+            targetDate: project.targetDate,
+          }));
+        const overviewMemory = await memoryService.saveMemory(ctx, {
+          namespace: 'team' as MemoryNamespace,
+          category: 'insight',
+          content: buildContent('overview', {
+            organization: state.organization,
+            counts: {
+              teams: state.teams.length,
+              members: state.members.length,
+              projects: state.projects.length,
+              milestones: state.milestones.length,
+              cycles: state.cycles.length,
+              recentTickets: state.recentTickets.length,
+              labels: state.labels.length,
+              workflowStates: state.workflowStates.length,
+              inboxCandidates: state.inboxCandidates.length,
+            },
+            topProjects,
+            teams: state.teams,
+          }),
+          summary: `[Onboarding][Linear] Overview: ${state.teams.length} teams, ${state.projects.length} projects, ${state.recentTickets.length} recent tickets`,
+          importance: 0.9,
+          confidence: 1,
+          sourceEventIds: [],
+          relatedEntityIds: [],
+          relatedMemoryIds: [],
+          entityRefs: {},
+        });
+        memoriesCreated.push(overviewMemory.id);
+
         // Save organization memory
         if (state.organization) {
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
-            content: JSON.stringify({
+            content: buildContent('organization', {
               type: 'linear_organization',
               organization: state.organization,
               teams: state.teams,
               memberCount: state.members.length,
               projectCount: state.projects.length,
             }),
-            summary: `Linear organization: ${state.organization.name} with ${state.teams.length} teams`,
+            summary: `[Onboarding][Linear] Organization: ${state.organization.name} with ${state.teams.length} teams`,
             importance: 0.9,
             confidence: 1,
             sourceEventIds: [],
@@ -1531,7 +1578,7 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
-            content: JSON.stringify({
+            content: buildContent('team_members', {
               type: 'linear_team_members',
               members: state.members.map((m) => ({
                 id: m.id,
@@ -1540,7 +1587,7 @@ Focus on insights that would help a team lead or project manager make better dec
                 isAdmin: m.isAdmin,
               })),
             }),
-            summary: `Linear team: ${state.members.length} members (${state.members.filter((m) => m.isAdmin).length} admins)`,
+            summary: `[Onboarding][Linear] Team: ${state.members.length} members (${state.members.filter((m) => m.isAdmin).length} admins)`,
             importance: 0.7,
             confidence: 1,
             sourceEventIds: [],
@@ -1562,7 +1609,7 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'project' as MemoryNamespace,
             category: 'insight',
-            content: JSON.stringify({
+            content: buildContent('project_detail', {
               type: 'linear_project_detail',
               project: group.project,
               analysis: analysis || null,
@@ -1586,8 +1633,8 @@ Focus on insights that would help a team lead or project manager make better dec
               totalTickets: group.tickets.length,
             }),
             summary: analysis
-              ? `Project "${group.project.name}": ${analysis.summary} (Health: ${analysis.healthScore}%)`
-              : `Project "${group.project.name}": ${group.stats.total} tickets, ${group.stats.completed} completed`,
+              ? `[Onboarding][Linear] Project "${group.project.name}": ${analysis.summary} (Health: ${analysis.healthScore}%)`
+              : `[Onboarding][Linear] Project "${group.project.name}": ${group.stats.total} tickets, ${group.stats.completed} completed`,
             importance: 0.85,
             confidence: 1,
             sourceEventIds: [],
@@ -1603,7 +1650,7 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'project' as MemoryNamespace,
             category: 'progress',
-            content: JSON.stringify({
+            content: buildContent('milestone_detail', {
               type: 'linear_milestone_detail',
               milestone: group.milestone,
               stats: group.stats,
@@ -1621,7 +1668,7 @@ Focus on insights that would help a team lead or project manager make better dec
                 ),
               ),
             }),
-            summary: `Sprint "${group.milestone.name}": ${group.stats.completed}/${group.stats.total} completed, ${group.stats.onTrack ? 'On Track' : 'At Risk'}`,
+            summary: `[Onboarding][Linear] Sprint "${group.milestone.name}": ${group.stats.completed}/${group.stats.total} completed, ${group.stats.onTrack ? 'On Track' : 'At Risk'}`,
             importance: 0.7,
             confidence: 1,
             sourceEventIds: [],
@@ -1637,7 +1684,7 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
-            content: JSON.stringify({
+            content: buildContent('user_workload', {
               type: 'linear_user_workload',
               user: group.user,
               stats: group.stats,
@@ -1653,7 +1700,7 @@ Focus on insights that would help a team lead or project manager make better dec
                 ]),
               ),
             }),
-            summary: `${group.user.name}: ${group.stats.total} tickets (${group.stats.inProgress} in progress, ${group.stats.highPriority} high priority)`,
+            summary: `[Onboarding][Linear] ${group.user.name}: ${group.stats.total} tickets (${group.stats.inProgress} in progress, ${group.stats.highPriority} high priority)`,
             importance: 0.6,
             confidence: 1,
             sourceEventIds: [],
@@ -1671,13 +1718,13 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
-            content: JSON.stringify({
+            content: buildContent('workflow_config', {
               type: 'linear_workflow_config',
               workflowStates: state.workflowStates,
               labels: state.labels,
               cycles: state.cycles,
             }),
-            summary: `Linear workflow: ${state.workflowStates.length} states, ${state.labels.length} labels`,
+            summary: `[Onboarding][Linear] Workflow: ${state.workflowStates.length} states, ${state.labels.length} labels`,
             importance: 0.6,
             confidence: 1,
             sourceEventIds: [],
@@ -1693,12 +1740,12 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'ticket' as MemoryNamespace,
             category: 'insight',
-            content: JSON.stringify({
+            content: buildContent('ticket_patterns', {
               type: 'linear_ticket_patterns',
               patterns: state.ticketPatterns,
               analyzedTickets: state.recentTickets.length,
             }),
-            summary: `Linear ticket patterns from ${state.recentTickets.length} issues`,
+            summary: `[Onboarding][Linear] Ticket patterns from ${state.recentTickets.length} issues`,
             importance: 0.7,
             confidence: 0.9,
             sourceEventIds: [],
@@ -1714,8 +1761,12 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'insight',
-            content: obs.observation,
-            summary: obs.title,
+            content: buildContent('observation', {
+              title: obs.title,
+              observation: obs.observation,
+              relatedEntities: obs.relatedEntities || [],
+            }),
+            summary: `[Onboarding][Linear] ${obs.title}`,
             importance: obs.importance,
             confidence: 0.8,
             sourceEventIds: [],
@@ -1731,7 +1782,7 @@ Focus on insights that would help a team lead or project manager make better dec
           const memory = await memoryService.saveMemory(ctx, {
             namespace: 'team' as MemoryNamespace,
             category: 'risk',
-            content: JSON.stringify({
+            content: buildContent('inbox_candidates', {
               type: 'linear_inbox_candidates',
               candidates: state.inboxCandidates,
               summary: {
@@ -1747,7 +1798,7 @@ Focus on insights that would help a team lead or project manager make better dec
                 ).length,
               },
             }),
-            summary: `Linear onboarding detected ${state.inboxCandidates.length} items requiring attention`,
+            summary: `[Onboarding][Linear] Detected ${state.inboxCandidates.length} items requiring attention`,
             importance: 0.9,
             confidence: 0.85,
             sourceEventIds: [],
@@ -1756,6 +1807,26 @@ Focus on insights that would help a team lead or project manager make better dec
             entityRefs: {},
           });
           memoriesCreated.push(memory.id);
+        }
+
+        if (memoriesCreated.length > 0) {
+          const memoryIds = [...memoriesCreated];
+          const indexMemory = await memoryService.saveMemory(ctx, {
+            namespace: 'workspace' as MemoryNamespace,
+            category: 'settings',
+            content: buildContent('index', {
+              runId: ctx.correlationId,
+              memoryIds,
+            }),
+            summary: `[Onboarding][Linear] Index: ${memoryIds.length} memories`,
+            importance: 0.2,
+            confidence: 1,
+            sourceEventIds: [],
+            relatedEntityIds: [],
+            relatedMemoryIds: [],
+            entityRefs: {},
+          });
+          memoriesCreated.push(indexMemory.id);
         }
 
         logger.log(

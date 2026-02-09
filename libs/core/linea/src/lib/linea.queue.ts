@@ -5,6 +5,7 @@ import {
   EventType,
   IntegrationConnectedEvent,
   IntegrationWebhookReceivedEvent,
+  WorkspaceCreatedEvent,
   Public,
 } from '@launchline/core-common';
 import {
@@ -12,12 +13,17 @@ import {
   IntegrationType,
   GitHubService,
   SlackService,
+  IntegrationStatus,
 } from '@launchline/core-integration';
 import {
   RabbitSubscribe,
   MessageHandlerErrorBehavior,
 } from '@golevelup/nestjs-rabbitmq';
-import { OnboardingGraphsFactory } from './services';
+import {
+  MemoryService,
+  OnboardingGraphsFactory,
+  SkillsFactory,
+} from './services';
 import { LineaFacade } from './linea.facade';
 import { randomUUID } from 'crypto';
 import { SourceType } from './types';
@@ -40,7 +46,82 @@ export class LineaQueue {
     private readonly assistantService: AssistantService,
     private readonly lineaJobsService: LineaJobsService,
     private readonly agentFactory: AgentFactory,
+    private readonly memoryService: MemoryService,
+    private readonly skillsFactory: SkillsFactory,
   ) {}
+
+  public async reonboardIntegration(
+    workspaceId: string,
+    userId: string,
+    integrationId: string,
+    options?: { clearData?: boolean },
+  ): Promise<boolean> {
+    const integration =
+      await this.integrationFacade.getIntegration(integrationId);
+
+    if (!integration || integration.workspaceId !== workspaceId) {
+      this.logger.warn(
+        { integrationId, workspaceId },
+        'Re-onboard failed: integration not found',
+      );
+      return false;
+    }
+
+    if (integration.status !== IntegrationStatus.ACTIVE) {
+      this.logger.warn(
+        { integrationId, workspaceId, status: integration.status },
+        'Re-onboard failed: integration not active',
+      );
+      return false;
+    }
+
+    let platform: 'slack' | 'linear' | 'github' | null = null;
+    if (integration.type === IntegrationType.SLACK) {
+      platform = 'slack';
+    } else if (integration.type === IntegrationType.LINEAR) {
+      platform = 'linear';
+    } else if (integration.type === IntegrationType.GITHUB) {
+      platform = 'github';
+    }
+
+    if (!platform) {
+      this.logger.warn(
+        { integrationId, type: integration.type },
+        'Re-onboard failed: unsupported integration type',
+      );
+      return false;
+    }
+
+    const correlationId = randomUUID();
+    const clearData = options?.clearData !== false;
+    if (clearData) {
+      const ctx = {
+        workspaceId,
+        userId,
+        correlationId,
+      };
+      await this.memoryService.archiveOnboardingMemories(ctx, platform);
+    }
+
+    switch (integration.type) {
+      case IntegrationType.LINEAR:
+        await this.triggerLinearOnboarding(integration.id, workspaceId, userId);
+        return true;
+      case IntegrationType.SLACK:
+        await this.triggerSlackOnboarding(
+          integration.id,
+          workspaceId,
+          userId,
+          integration.externalOrganizationId || undefined,
+        );
+        return true;
+      case IntegrationType.GITHUB:
+        await this.triggerGitHubOnboarding(integration.id, workspaceId, userId);
+        return true;
+      default:
+        return false;
+    }
+  }
 
   @Public()
   @RabbitSubscribe({
@@ -63,6 +144,10 @@ export class LineaQueue {
         await this.handleWebhookReceived(
           domainEvent as IntegrationWebhookReceivedEvent,
         );
+        break;
+      }
+      case EventType.WORKSPACE_CREATED: {
+        await this.handleWorkspaceCreated(domainEvent as WorkspaceCreatedEvent);
         break;
       }
     }
@@ -92,6 +177,14 @@ export class LineaQueue {
     if (payload.integrationType === IntegrationType.GITHUB) {
       await this.processGitHubWebhook(payload);
     }
+  }
+
+  private async handleWorkspaceCreated(
+    event: WorkspaceCreatedEvent,
+  ): Promise<void> {
+    const { workspaceId } = event.payload;
+
+    await this.skillsFactory.ensureWorkspaceSkills(workspaceId);
   }
 
   /**
@@ -425,17 +518,24 @@ export class LineaQueue {
           }
         | undefined;
 
+      let handledByAgent = false;
       if (event && (event.type === 'message' || event.type === 'app_mention')) {
-        await this.handleSlackConversation(payload, webhookPayload, event);
+        handledByAgent = await this.handleSlackConversation(
+          payload,
+          webhookPayload,
+          event,
+        );
       }
 
-      await this.lineaFacade.processWebhook({
-        workspaceId: payload.workspaceId,
-        userId: 'system',
-        source: 'slack' as SourceType,
-        eventType: payload.eventType,
-        payload: webhookPayload,
-      });
+      if (!handledByAgent) {
+        await this.lineaFacade.processWebhook({
+          workspaceId: payload.workspaceId,
+          userId: 'system',
+          source: 'slack' as SourceType,
+          eventType: payload.eventType,
+          payload: webhookPayload,
+        });
+      }
     } catch (error) {
       this.logger.error(
         { err: error, workspaceId: payload.workspaceId },
@@ -602,21 +702,21 @@ export class LineaQueue {
       thread_ts?: string;
       bot_id?: string;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (event.subtype || event.bot_id) {
-      return;
+      return false;
     }
 
     const channel = event.channel;
     if (!channel || !event.text || !event.ts) {
-      return;
+      return false;
     }
 
     const isDirectMessage = event.channel_type === 'im';
     const isMention = event.type === 'app_mention';
 
     if (!isDirectMessage && !isMention) {
-      return;
+      return false;
     }
 
     const accessToken = await this.integrationFacade.getAccessToken(
@@ -627,7 +727,7 @@ export class LineaQueue {
         { integrationId: payload.integrationId },
         'Slack access token missing for reply',
       );
-      return;
+      return false;
     }
 
     const threadRoot = event.thread_ts || event.ts;
@@ -648,7 +748,7 @@ export class LineaQueue {
       : event.text.trim();
 
     if (!cleanedText) {
-      return;
+      return false;
     }
 
     const agent = await this.agentFactory.getAgentForWorkspace(
@@ -684,7 +784,7 @@ export class LineaQueue {
         { eventType: event.type, workspaceId: payload.workspaceId },
         'Slack reply missing from agent response',
       );
-      return;
+      return false;
     }
 
     await this.slackService.postMessage(
@@ -703,6 +803,8 @@ export class LineaQueue {
       },
       'Replied to Slack message',
     );
+
+    return true;
   }
 
   // No thread history check needed; workspace prompt is embedded in agent.

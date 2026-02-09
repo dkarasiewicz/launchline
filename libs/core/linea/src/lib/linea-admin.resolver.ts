@@ -18,6 +18,7 @@ import {
   LineaWorkspacePrompt,
   LineaHeartbeatSettings,
   LineaHeartbeatSummaryDelivery,
+  ReonboardIntegrationInput,
   UpdateLineaHeartbeatSettingsInput,
   UpsertLineaSkillInput,
   UpdateLineaWorkspacePromptInput,
@@ -27,14 +28,12 @@ import {
   HeartbeatSettingsService,
   MemoryService,
   TeamInsightsService,
+  WorkspaceSkillsService,
 } from './services';
 import type { HeartbeatSummaryDelivery } from './services/heartbeat-settings.service';
 import { AgentPromptService } from './services/agent-prompt.service';
-import {
-  MemoryNamespace,
-  MemoryNamespaceSchema,
-  type MemoryItem,
-} from './types';
+import { MemoryNamespace, MemoryNamespaceSchema } from './types';
+import { LineaQueue } from './linea.queue';
 
 @Resolver()
 export class LineaAdminResolver {
@@ -44,6 +43,8 @@ export class LineaAdminResolver {
     private readonly agentPromptService: AgentPromptService,
     private readonly teamInsightsService: TeamInsightsService,
     private readonly heartbeatSettingsService: HeartbeatSettingsService,
+    private readonly workspaceSkillsService: WorkspaceSkillsService,
+    private readonly lineaQueue: LineaQueue,
   ) {}
 
   @Query(() => LineaJobListResponse)
@@ -190,6 +191,20 @@ export class LineaAdminResolver {
     };
   }
 
+  @Mutation(() => Boolean)
+  async reonboardIntegration(
+    @CurrentWorkspace() workspace: AuthenticatedWorkspace,
+    @CurrentUser() user: AuthenticatedUser,
+    @Args('input') input: ReonboardIntegrationInput,
+  ): Promise<boolean> {
+    return this.lineaQueue.reonboardIntegration(
+      workspace.id,
+      user.userId,
+      input.integrationId,
+      { clearData: input.clearData },
+    );
+  }
+
   @Query(() => LineaMemoryListResponse)
   async lineaMemories(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
@@ -241,95 +256,57 @@ export class LineaAdminResolver {
   async lineaSkills(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
   ): Promise<LineaSkillListResponse> {
-    const memories = await this.memoryService.listMemories(
+    const skills = await this.workspaceSkillsService.listWorkspaceSkills(
       workspace.id,
-      'workspace',
-      { limit: 200 },
     );
 
-    const skills = memories
-      .filter((memory) => memory.category === 'skill')
-      .sort((a, b) => {
-        const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
-        const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
-        return bTime - aTime;
-      });
-
     return {
-      skills: skills.map((memory) => this.mapSkill(memory)),
+      skills: skills.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        content: skill.content,
+        updatedAt: skill.updatedAt,
+        createdAt: skill.createdAt,
+      })),
     };
   }
 
   @Mutation(() => LineaSkill)
   async upsertLineaSkill(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() _user: AuthenticatedUser,
     @Args('input') input: UpsertLineaSkillInput,
   ): Promise<LineaSkill> {
     const name = input.name.trim();
     const content = input.content.trim();
-    const ctx = {
-      workspaceId: workspace.id,
-      userId: user.userId,
-      correlationId: `skill-${Date.now()}`,
-    };
 
-    let existing: MemoryItem | null = null;
-
-    if (input.id) {
-      existing = await this.memoryService.getMemory(
-        ctx,
-        input.id,
-        'workspace',
-      );
-    }
-
-    if (!existing) {
-      const memories = await this.memoryService.listMemories(
-        workspace.id,
-        'workspace',
-        { limit: 200 },
-      );
-      existing =
-        memories.find(
-          (memory) =>
-            memory.category === 'skill' &&
-            memory.summary?.toLowerCase() === name.toLowerCase(),
-        ) || null;
-    }
-
-    if (existing) {
-      const updated = await this.memoryService.updateMemory(
-        ctx,
-        existing.id,
-        'workspace',
-        {
-          content,
-          summary: name,
-          importance: existing.importance ?? 0.7,
-          confidence: existing.confidence ?? 0.9,
-        },
-      );
-
-      if (updated) {
-        return this.mapSkill(updated);
-      }
-    }
-
-    const created = await this.memoryService.saveMemory(ctx, {
-      namespace: 'workspace',
-      category: 'skill',
+    const saved = await this.workspaceSkillsService.upsertWorkspaceSkill(
+      workspace.id,
+      name,
       content,
-      summary: name,
-      importance: 0.7,
-      confidence: 0.9,
-      sourceEventIds: [],
-      relatedEntityIds: [],
-      relatedMemoryIds: [],
-      entityRefs: {},
-    });
+      { id: input.id },
+    );
 
-    return this.mapSkill(created);
+    return {
+      id: saved.id,
+      name: saved.name,
+      content: saved.content,
+      updatedAt: saved.updatedAt,
+      createdAt: saved.createdAt,
+    };
+  }
+
+  @Mutation(() => Boolean)
+  async deleteLineaSkill(
+    @CurrentWorkspace() workspace: AuthenticatedWorkspace,
+    @CurrentUser() user: AuthenticatedUser,
+    @Args('id') id: string,
+  ): Promise<boolean> {
+    return this.workspaceSkillsService.deleteWorkspaceSkill(
+      workspace.id,
+      id,
+      { userId: user.userId },
+    );
   }
 
   @Query(() => LineaTeamGraph)
@@ -341,13 +318,4 @@ export class LineaAdminResolver {
     return this.teamInsightsService.buildTeamGraph(workspace.id, safeLimit);
   }
 
-  private mapSkill(memory: MemoryItem): LineaSkill {
-    return {
-      id: memory.id,
-      name: memory.summary || 'Untitled skill',
-      content: memory.content || '',
-      updatedAt: memory.updatedAt ? new Date(memory.updatedAt) : undefined,
-      createdAt: memory.createdAt ? new Date(memory.createdAt) : undefined,
-    };
-  }
 }

@@ -335,3 +335,15 @@ export class LineaMemoryQueryInput {
   @Max(200)
   limit?: number;
 }
+
+@InputType()
+export class ReonboardIntegrationInput {
+  @Field()
+  @IsString()
+  integrationId!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  clearData?: boolean;
+}
