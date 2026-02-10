@@ -70,6 +70,23 @@ const TEAM_GRAPH_QUERY = gql`
   }
 `;
 
+const TEAM_TIMELINE_QUERY = gql`
+  query LineaMemoryTimeline($input: LineaMemoryTimelineInput!) {
+    lineaMemoryTimeline(input: $input) {
+      memories {
+        id
+        namespace
+        category
+        summary
+        content
+        importance
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
 type GraphNode = {
   id: string;
   label: string;
@@ -95,6 +112,17 @@ type GraphInsight = {
   title: string;
   detail: string;
   level: string;
+};
+
+type TimelineMemory = {
+  id: string;
+  namespace: string;
+  category: string;
+  summary: string;
+  content: string;
+  importance: number;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type ForceNode = {
@@ -166,6 +194,21 @@ function formatTypeLabel(type: string, plural = false) {
     return primaryTypeLabels[type as (typeof primaryTypes)[number]];
   }
   return nodeTypeLabels[type] || type;
+}
+
+function formatTimelineDate(value?: string) {
+  if (!value) return 'Unknown date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function truncateText(value: string, max = 160) {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 3).trimEnd()}...`;
 }
 
 const relationLabels: Record<string, string> = {
@@ -538,6 +581,29 @@ export default function TeamClient() {
     () => visibleNodes.find((node) => node.id === selectedNodeId) ?? null,
     [visibleNodes, selectedNodeId],
   );
+
+  const timelineInput = useMemo(() => {
+    if (!selectedNode) return null;
+    return {
+      entityId: selectedNode.id,
+      entityType: selectedNode.type,
+      limit: 40,
+    };
+  }, [selectedNode]);
+
+  const {
+    data: timelineData,
+    loading: timelineLoading,
+    error: timelineError,
+  } = useQuery<{
+    lineaMemoryTimeline: { memories: TimelineMemory[] };
+  }>(TEAM_TIMELINE_QUERY, {
+    variables: timelineInput ? { input: timelineInput } : undefined,
+    skip: !timelineInput,
+    fetchPolicy: 'cache-and-network',
+  });
+
+  const timelineMemories = timelineData?.lineaMemoryTimeline?.memories ?? [];
 
   const selectedConnectionEdges = useMemo(() => {
     if (!selectedNode) return [];
@@ -979,6 +1045,47 @@ export default function TeamClient() {
                               <span className="text-xs text-muted-foreground">
                                 {connection.weight}
                               </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                        Timeline
+                      </p>
+                      {timelineLoading ? (
+                        <p className="text-sm text-muted-foreground">
+                          Loading linked memories...
+                        </p>
+                      ) : timelineError ? (
+                        <p className="text-sm text-muted-foreground">
+                          Failed to load linked memories.
+                        </p>
+                      ) : timelineMemories.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No linked memories yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {timelineMemories.map((memory) => (
+                            <div
+                              key={memory.id}
+                              className="rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-sm"
+                            >
+                              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                                <span className="capitalize">
+                                  {memory.category}
+                                </span>
+                                <span>{formatTimelineDate(memory.createdAt)}</span>
+                              </div>
+                              <p className="mt-1 font-medium text-foreground">
+                                {memory.summary}
+                              </p>
+                              <p className="mt-1 text-[12px] text-muted-foreground">
+                                {truncateText(memory.content)}
+                              </p>
                             </div>
                           ))}
                         </div>

@@ -142,19 +142,37 @@ export class LineaJobsProcessor extends WorkerHost {
     const summary = (report.summary || '').trim();
     const title = report.title || 'Heartbeat update';
     const actionable = report.actionable === true;
+    const dedupeWindowMinutes = 120;
+    const relatedRefs = report.related || {};
 
     if (actionable) {
-      await this.lineaFacade.createInboxThread({
+      const isDuplicate = await this.lineaFacade.hasRecentInboxThread({
         workspaceId,
         userId,
-        type: 'action_required',
-        priority: this.normalizePriority(report.priority),
         title,
-        summary: summary || 'Heartbeat flagged items needing attention.',
-        suggestedActions: report.suggested_actions || [],
-        sourceMemoryIds: [],
-        entityRefs: report.related || {},
+        type: 'action_required',
+        entityRefs: relatedRefs,
+        withinMinutes: dedupeWindowMinutes,
       });
+
+      if (isDuplicate) {
+        this.logger.debug(
+          { workspaceId, jobId: job.id, title },
+          'Skipping duplicate heartbeat action item',
+        );
+      } else {
+        await this.lineaFacade.createInboxThread({
+          workspaceId,
+          userId,
+          type: 'action_required',
+          priority: this.normalizePriority(report.priority),
+          title,
+          summary: summary || 'Heartbeat flagged items needing attention.',
+          suggestedActions: report.suggested_actions || [],
+          sourceMemoryIds: [],
+          entityRefs: relatedRefs,
+        });
+      }
     }
 
     const shouldSendSummary =
@@ -166,17 +184,33 @@ export class LineaJobsProcessor extends WorkerHost {
 
     if (shouldSendSummary) {
       if (settings.summaryDelivery === 'inbox') {
-        await this.lineaFacade.createInboxThread({
+        const isDuplicate = await this.lineaFacade.hasRecentInboxThread({
           workspaceId,
           userId,
-          type: actionable ? 'update' : 'update',
-          priority: actionable ? 'medium' : 'low',
           title,
-          summary,
-          suggestedActions: report.suggested_actions || [],
-          sourceMemoryIds: [],
-          entityRefs: report.related || {},
+          type: 'update',
+          entityRefs: relatedRefs,
+          withinMinutes: dedupeWindowMinutes,
         });
+
+        if (isDuplicate) {
+          this.logger.debug(
+            { workspaceId, jobId: job.id, title },
+            'Skipping duplicate heartbeat summary',
+          );
+        } else {
+          await this.lineaFacade.createInboxThread({
+            workspaceId,
+            userId,
+            type: actionable ? 'update' : 'update',
+            priority: actionable ? 'medium' : 'low',
+            title,
+            summary,
+            suggestedActions: report.suggested_actions || [],
+            sourceMemoryIds: [],
+            entityRefs: relatedRefs,
+          });
+        }
       }
 
       if (settings.summaryDelivery === 'slack' && settings.slackChannelId) {

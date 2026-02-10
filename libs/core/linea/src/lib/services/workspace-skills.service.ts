@@ -334,7 +334,7 @@ export class WorkspaceSkillsService {
     if (!normalized.startsWith('---\n')) {
       return {
         name,
-        content: `---\nname: ${name}\ndescription: Workspace skill: ${name}\n---\n\n${normalized}`,
+        content: `---\nname: ${this.quoteYamlValue(name)}\ndescription: ${this.quoteYamlValue(`Workspace skill: ${name}`)}\n---\n\n${normalized}`,
       };
     }
 
@@ -342,7 +342,7 @@ export class WorkspaceSkillsService {
     if (endIndex === -1) {
       return {
         name,
-        content: `---\nname: ${name}\ndescription: Workspace skill: ${name}\n---\n\n${normalized}`,
+        content: `---\nname: ${this.quoteYamlValue(name)}\ndescription: ${this.quoteYamlValue(`Workspace skill: ${name}`)}\n---\n\n${normalized}`,
       };
     }
 
@@ -372,8 +372,8 @@ export class WorkspaceSkillsService {
 
     const description = data['description'] || `Workspace skill: ${name}`;
     const rebuilt = [
-      `name: ${name}`,
-      `description: ${description}`,
+      `name: ${this.quoteYamlValue(name)}`,
+      `description: ${this.quoteYamlValue(description)}`,
       ...extraLines,
     ]
       .filter(Boolean)
@@ -399,6 +399,9 @@ export class WorkspaceSkillsService {
     }
 
     const frontmatter = normalized.slice(4, endIndex);
+    if (this.hasInvalidFrontmatter(frontmatter)) {
+      return null;
+    }
     const data: Record<string, string> = {};
     for (const line of frontmatter.split('\n')) {
       const trimmed = line.trim();
@@ -420,6 +423,35 @@ export class WorkspaceSkillsService {
     }
 
     return { name: data['name'], description: data['description'] };
+  }
+
+  private hasInvalidFrontmatter(frontmatter: string): boolean {
+    for (const line of frontmatter.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+      const separator = trimmed.indexOf(':');
+      if (separator === -1) {
+        continue;
+      }
+      const value = trimmed.slice(separator + 1).trim();
+      if (!value) {
+        continue;
+      }
+      const isQuoted =
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"));
+      if (!isQuoted && value.includes(': ')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private quoteYamlValue(value: string): string {
+    const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `"${escaped}"`;
   }
 
   private safeDate(value?: string | Date): Date | undefined {

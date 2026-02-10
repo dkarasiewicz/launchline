@@ -10,6 +10,7 @@ import {
   MemoryNamespaceSchema,
   type MemoryNamespace,
   type MemorySearchQuery,
+  type EntityRefs,
 } from '../types';
 
 @Injectable()
@@ -207,6 +208,85 @@ export class MemoryService {
     return results
       .map((item) => item.value as MemoryItem)
       .filter((m) => options?.includeArchived || !m.archivedAt)
+      .slice(0, limit);
+  }
+
+  async getEntityTimeline(
+    workspaceId: string,
+    input: {
+      entityIds?: string[];
+      entityRefs?: EntityRefs;
+      namespaces?: MemoryNamespace[];
+      limit?: number;
+      includeArchived?: boolean;
+    },
+  ): Promise<MemoryItem[]> {
+    const entityIds = (input.entityIds || []).filter(Boolean);
+    const entityRefs = input.entityRefs;
+
+    if (
+      entityIds.length === 0 &&
+      (!entityRefs ||
+        (!entityRefs.userIds?.length &&
+          !entityRefs.ticketIds?.length &&
+          !entityRefs.prIds?.length &&
+          !entityRefs.projectIds?.length &&
+          !entityRefs.teamIds?.length))
+    ) {
+      return [];
+    }
+
+    const namespaces = input.namespaces ?? MemoryNamespaceSchema.options;
+    const limit = input.limit ?? 80;
+    const includeArchived = input.includeArchived ?? false;
+    const perNamespace = Math.max(
+      20,
+      Math.ceil((limit / namespaces.length) * 3),
+    );
+
+    const allMemories: MemoryItem[] = [];
+    for (const namespace of namespaces) {
+      const memories = await this.listMemories(workspaceId, namespace, {
+        limit: perNamespace,
+        includeArchived,
+      });
+      allMemories.push(...memories);
+    }
+
+    const idSet = new Set(entityIds);
+    const matchEntityRefs = (values?: string[]) =>
+      values?.some((value) => idSet.has(value)) ?? false;
+    const matchEntityRefsByKey = (
+      values?: string[],
+      queryValues?: string[],
+    ) =>
+      values?.some((value) => queryValues?.includes(value)) ?? false;
+
+    const filtered = allMemories.filter((memory) => {
+      if (memory.archivedAt && !includeArchived) {
+        return false;
+      }
+
+      if (matchEntityRefs(memory.relatedEntityIds)) {
+        return true;
+      }
+
+      const refs = memory.entityRefs || {};
+      return (
+        matchEntityRefsByKey(refs.userIds, entityRefs?.userIds) ||
+        matchEntityRefsByKey(refs.ticketIds, entityRefs?.ticketIds) ||
+        matchEntityRefsByKey(refs.prIds, entityRefs?.prIds) ||
+        matchEntityRefsByKey(refs.projectIds, entityRefs?.projectIds) ||
+        matchEntityRefsByKey(refs.teamIds, entityRefs?.teamIds)
+      );
+    });
+
+    return filtered
+      .sort(
+        (a, b) =>
+          this.ensureDate(b.createdAt).getTime() -
+          this.ensureDate(a.createdAt).getTime(),
+      )
       .slice(0, limit);
   }
 

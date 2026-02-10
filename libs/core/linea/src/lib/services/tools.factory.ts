@@ -331,7 +331,7 @@ export class ToolsFactory {
             result.success &&
             !closeSession &&
             resolvedSteps.length > 0 &&
-            (saveSkill ?? !hasSourceSkill);
+            saveSkill === true;
 
           if (shouldSaveSkill) {
             const targetSkillName = hasSourceSkill ? sourceSkill!.trim() : goal;

@@ -298,7 +298,7 @@ Use this when you need to:
 
 ## Skill Reuse Rules
 - If you are running steps from an existing skill, pass \`sourceSkill\` and do **not** save a new skill.
-- Only set \`saveSkill: true\` when explicitly asked to update or extend that skill.
+- Only set \`saveSkill: true\` when explicitly asked to save or update a skill.
 
 ## Guardrails
 - Create a short plan first (list steps) before calling this tool

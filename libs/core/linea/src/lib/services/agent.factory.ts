@@ -16,6 +16,7 @@ import { SubagentsFactory } from './subagents.factory';
 import { SkillsFactory } from './skills.factory';
 import { AgentPromptService } from './agent-prompt.service';
 import { buildLineaSystemPrompt } from '../prompts';
+import { WorkspaceSkillsService } from './workspace-skills.service';
 
 export interface LineaAgentState {
   workspaceId: string;
@@ -46,6 +47,7 @@ export class AgentFactory {
     private readonly skillsFactory: SkillsFactory,
     private readonly agentPromptService: AgentPromptService,
     private readonly memoryService: MemoryService,
+    private readonly workspaceSkillsService: WorkspaceSkillsService,
   ) {}
 
   private readonly backfilledWorkspaces = new Set<string>();
@@ -84,6 +86,15 @@ export class AgentFactory {
         this.logger.warn(
           { err: error, workspaceId },
           'Failed to backfill memory files',
+        );
+      }
+
+      try {
+        await this.workspaceSkillsService.listWorkspaceSkills(workspaceId);
+      } catch (error) {
+        this.logger.warn(
+          { err: error, workspaceId },
+          'Failed to validate workspace skills',
         );
       }
     }

@@ -648,7 +648,7 @@ export const RunSandboxWorkflowInputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Whether to save the workflow as a skill (defaults to true unless sourceSkill is provided)',
+      'Whether to save the workflow as a skill (default false; only set when requested)',
     ),
   steps: z
     .array(RunSandboxWorkflowStepSchema)

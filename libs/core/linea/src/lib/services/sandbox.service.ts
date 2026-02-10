@@ -1,9 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import { TextEncoder } from 'node:util';
 import type { ExecuteResponse, SandboxBackendProtocol } from 'deepagents';
-import { WorkspaceSkillsService } from './workspace-skills.service';
 import { DenoSandboxRegion, SandboxLifetime } from '@langchain/deno';
 
 export type SandboxRunResult = {
@@ -83,13 +81,9 @@ export class SandboxService {
   private readonly workflowMaxSteps: number;
   private readonly workflowTimeoutMs: number;
   private readonly sandboxTimeoutMs: number;
-  private readonly workspaceDir: string;
   private readonly sessions = new Map<string, SandboxSession>();
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly workspaceSkillsService: WorkspaceSkillsService,
-  ) {
+  constructor(private readonly configService: ConfigService) {
     this.provider = (
       this.configService.get<string>('linea.sandbox.provider') ||
       process.env['LINEA_SANDBOX_PROVIDER'] ||
@@ -111,8 +105,6 @@ export class SandboxService {
     this.sandboxTimeoutMs = Number(
       process.env['LINEA_SANDBOX_TIMEOUT_MS'] || '120000',
     );
-    this.workspaceDir =
-      process.env['LINEA_SANDBOX_WORKSPACE_DIR'] || '/workspace';
   }
 
   async runCommand(input: {
@@ -281,8 +273,6 @@ export class SandboxService {
         }
       }
 
-      await this.prepareWorkspace(sandbox, input.workspaceId, true);
-
       const deadline = Date.now() + timeoutMs;
       const stepResults: SandboxWorkflowStepResult[] = [];
       let truncated = false;
@@ -372,7 +362,7 @@ export class SandboxService {
       workspaceId,
       persistWorkspace: true,
     });
-    await this.ensureWorkspaceDir(session.sandbox);
+
     return session.sandbox;
   }
 
@@ -382,7 +372,6 @@ export class SandboxService {
     timeoutMs?: number;
   }): Promise<ExecuteResponse> {
     const sandbox = await this.getWorkspaceSandbox(input.workspaceId);
-    await this.writeSkills(sandbox, input.workspaceId, true);
     const result = await this.executeStep(
       sandbox,
       { name: 'execute', command: input.command },
@@ -497,9 +486,7 @@ export class SandboxService {
   }
 
   private decorateCommand(command: string): string {
-    const workdir = this.escapeShellValue(this.workspaceDir);
-    const skillsDir = this.escapeShellValue(`${this.workspaceDir}/skills`);
-    return `cd ${workdir} && export SKILLS_DIR=${skillsDir} && ${command}`;
+    return `${command}`;
   }
 
   private escapeShellValue(value: string): string {
@@ -516,16 +503,20 @@ export class SandboxService {
     persistWorkspace: boolean;
   }): Promise<SandboxSession> {
     const existing = this.sessions.get(input.sessionId);
+
     if (existing) {
       if (existing.workspaceId !== input.workspaceId) {
         throw new Error('Sandbox session does not belong to this workspace.');
       }
+
       existing.lastUsedAt = Date.now();
       existing.expiresAt = existing.lastUsedAt + this.sessionTtlMs;
+
       return existing;
     }
 
     await this.pruneExpiredSessions();
+
     if (this.sessions.size >= this.maxSessions) {
       await this.evictOldestSession();
     }
@@ -537,7 +528,9 @@ export class SandboxService {
       sandbox,
       input.persistWorkspace,
     );
+
     this.sessions.set(input.sessionId, session);
+
     return session;
   }
 
@@ -623,7 +616,6 @@ export class SandboxService {
     try {
       const module = await import('@langchain/node-vfs');
       const sandbox = await module.VfsSandbox.create({
-        mountPath: this.workspaceDir,
         timeout: this.sandboxTimeoutMs,
       });
       return sandbox as ManagedSandbox;
@@ -656,72 +648,6 @@ export class SandboxService {
       );
       throw error;
     }
-  }
-
-  private async ensureWorkspaceDir(sandbox: ManagedSandbox): Promise<void> {
-    await sandbox.execute(
-      `mkdir -p ${this.escapeShellValue(this.workspaceDir)}`,
-    );
-  }
-
-  private async prepareWorkspace(
-    sandbox: ManagedSandbox,
-    workspaceId: string,
-    resetSkillsDir: boolean,
-  ): Promise<void> {
-    await this.ensureWorkspaceDir(sandbox);
-    await this.writeSkills(sandbox, workspaceId, resetSkillsDir);
-  }
-
-  private async getSkillFiles(
-    workspaceId: string,
-  ): Promise<Array<{ name: string; fileName: string; content: string }>> {
-    const skills =
-      await this.workspaceSkillsService.listWorkspaceSkills(workspaceId);
-
-    return skills.map((skill, index) => {
-      const safeName = skill.slug || `skill-${index + 1}`;
-      return {
-        name: skill.name,
-        fileName: `${safeName}.md`,
-        content: skill.content,
-      };
-    });
-  }
-
-  private async writeSkills(
-    sandbox: ManagedSandbox,
-    workspaceId: string,
-    resetSkillsDir = false,
-  ): Promise<void> {
-    const skills = await this.getSkillFiles(workspaceId);
-    const skillsDir = `${this.workspaceDir}/skills`;
-
-    if (resetSkillsDir) {
-      await sandbox.execute(`rm -rf ${this.escapeShellValue(skillsDir)}`);
-    }
-
-    if (skills.length === 0) {
-      return;
-    }
-
-    await sandbox.execute(`mkdir -p ${this.escapeShellValue(skillsDir)}`);
-
-    const encoder = new TextEncoder();
-    const uploads: Array<[string, Uint8Array]> = skills.map((skill) => [
-      `${skillsDir}/${skill.fileName}`,
-      encoder.encode(skill.content),
-    ]);
-
-    const index = skills
-      .map((skill) => `- ${skill.name} (${skill.fileName})`)
-      .join('\n');
-    uploads.push([
-      `${skillsDir}/SKILLS_INDEX.md`,
-      encoder.encode(`# Workspace Skills\n\n${index}\n`),
-    ]);
-
-    await sandbox.uploadFiles?.(uploads);
   }
 
   private buildWorkflowSummary(

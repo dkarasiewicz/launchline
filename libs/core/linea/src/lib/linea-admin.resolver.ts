@@ -6,12 +6,13 @@ import {
   CurrentWorkspace,
 } from '@launchline/core-common';
 import {
-  LineaJob,
   LineaJobListResponse,
   LineaJobStatus,
   LineaTeamGraph,
   LineaMemory,
   LineaMemoryListResponse,
+  LineaMemoryTimelineInput,
+  LineaMemoryTimelineResponse,
   LineaSkill,
   LineaSkillListResponse,
   LineaMemoryQueryInput,
@@ -32,7 +33,11 @@ import {
 } from './services';
 import type { HeartbeatSummaryDelivery } from './services/heartbeat-settings.service';
 import { AgentPromptService } from './services/agent-prompt.service';
-import { MemoryNamespace, MemoryNamespaceSchema } from './types';
+import {
+  MemoryNamespace,
+  MemoryNamespaceSchema,
+  type EntityRefs,
+} from './types';
 import { LineaQueue } from './linea.queue';
 
 @Resolver()
@@ -252,6 +257,54 @@ export class LineaAdminResolver {
     };
   }
 
+  @Query(() => LineaMemoryTimelineResponse)
+  async lineaMemoryTimeline(
+    @CurrentWorkspace() workspace: AuthenticatedWorkspace,
+    @Args('input') input: LineaMemoryTimelineInput,
+  ): Promise<LineaMemoryTimelineResponse> {
+    const entityId = input.entityId?.trim();
+    const limit = Math.min(Math.max(input.limit ?? 60, 1), 200);
+
+    if (!entityId) {
+      return { memories: [] };
+    }
+
+    const { entityIds, entityRefs } = this.buildTimelineRefs(
+      entityId,
+      input.entityType,
+    );
+
+    const memories = await this.memoryService.getEntityTimeline(workspace.id, {
+      entityIds,
+      entityRefs,
+      limit,
+      includeArchived: input.includeArchived ?? false,
+    });
+
+    return {
+      memories: memories.map<LineaMemory>((memory) => {
+        const namespace = memory.namespace ?? 'workspace';
+        const category = memory.category ?? 'note';
+        const content = memory.content ?? '';
+        const summary =
+          memory.summary ?? (content ? content.slice(0, 160) : 'Memory');
+        const importance =
+          typeof memory.importance === 'number' ? memory.importance : 0.5;
+
+        return {
+          id: memory.id,
+          namespace,
+          category,
+          summary,
+          content,
+          importance,
+          updatedAt: memory.updatedAt ? new Date(memory.updatedAt) : undefined,
+          createdAt: memory.createdAt ? new Date(memory.createdAt) : undefined,
+        };
+      }),
+    };
+  }
+
   @Query(() => LineaSkillListResponse)
   async lineaSkills(
     @CurrentWorkspace() workspace: AuthenticatedWorkspace,
@@ -302,11 +355,9 @@ export class LineaAdminResolver {
     @CurrentUser() user: AuthenticatedUser,
     @Args('id') id: string,
   ): Promise<boolean> {
-    return this.workspaceSkillsService.deleteWorkspaceSkill(
-      workspace.id,
-      id,
-      { userId: user.userId },
-    );
+    return this.workspaceSkillsService.deleteWorkspaceSkill(workspace.id, id, {
+      userId: user.userId,
+    });
   }
 
   @Query(() => LineaTeamGraph)
@@ -318,4 +369,76 @@ export class LineaAdminResolver {
     return this.teamInsightsService.buildTeamGraph(workspace.id, safeLimit);
   }
 
+  private buildTimelineRefs(
+    entityId: string,
+    entityType?: string,
+  ): {
+    entityIds: string[];
+    entityRefs: EntityRefs;
+  } {
+    const entityIds = new Set<string>();
+    const entityRefs: EntityRefs = {};
+
+    const addRef = (key: keyof EntityRefs, value?: string) => {
+      if (!value) return;
+      const existing = entityRefs[key] || [];
+      if (!existing.includes(value)) {
+        entityRefs[key] = [...existing, value];
+      }
+    };
+
+    const addEntityId = (value?: string) => {
+      if (value) {
+        entityIds.add(value);
+      }
+    };
+
+    addEntityId(entityId);
+
+    if (entityId.startsWith('user:')) {
+      const raw = entityId.slice(5);
+      addRef('userIds', raw);
+      addEntityId(raw);
+    } else if (entityId.startsWith('ticket:')) {
+      const raw = entityId.slice(7);
+      addRef('ticketIds', raw);
+      addEntityId(raw);
+    } else if (entityId.startsWith('project:')) {
+      const raw = entityId.slice(8);
+      addRef('projectIds', raw);
+      addEntityId(raw);
+    } else if (entityId.startsWith('team:')) {
+      const raw = entityId.slice(5);
+      addRef('teamIds', raw);
+      addEntityId(raw);
+    } else if (entityId.startsWith('pr:')) {
+      const raw = entityId.slice(3);
+      addRef('prIds', raw);
+      addEntityId(raw);
+    } else if (entityId.startsWith('gh-pr:')) {
+      addRef('prIds', entityId);
+    } else if (entityType) {
+      switch (entityType) {
+        case 'person':
+          addRef('userIds', entityId);
+          break;
+        case 'ticket':
+          addRef('ticketIds', entityId);
+          break;
+        case 'project':
+          addRef('projectIds', entityId);
+          break;
+        case 'team':
+          addRef('teamIds', entityId);
+          break;
+        case 'pr':
+          addRef('prIds', entityId);
+          break;
+        default:
+          break;
+      }
+    }
+
+    return { entityIds: Array.from(entityIds), entityRefs };
+  }
 }

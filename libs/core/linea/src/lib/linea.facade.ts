@@ -105,39 +105,43 @@ export class LineaFacade {
     this.logger.log(`[LineaFacade] Created ${memoriesCreated.length} memories`);
 
     // 3. Build signal contexts for inbox generation
-    const signalContexts = normalizedEvents.map((event) => ({
-      signalId: event.id,
-      workspaceId: ctx.workspaceId,
-      source: event.source,
-      eventType: event.eventType,
-      timestamp: event.timestamp,
-      entity: {
-        id: event.entityId,
-        type: event.entityType,
-        title: event.title,
-        description: event.description,
-        status: event.status || 'unknown',
-        url: event.metadata?.['url'] as string | undefined,
-      },
-      teamContext: {
-        teamId: (event.metadata?.['team'] as { id: string } | undefined)?.id,
-        teamName: (event.metadata?.['team'] as { name: string } | undefined)
-          ?.name,
-        projectId: (event.metadata?.['project'] as { id: string } | undefined)
-          ?.id,
-      },
-      references: {
-        mentionedUsers: [],
-        linkedIssues: [],
-        linkedPRs: [],
-        blockerMentions: [],
-        decisionMentions: [],
-      },
-      rawText: {
-        title: event.title,
-        body: event.description,
-      },
-    }));
+    const signalContexts =
+      (classificationResult.signalContexts as
+        | typeof classificationResult.signalContexts
+        | undefined) ??
+      normalizedEvents.map((event) => ({
+        signalId: event.id,
+        workspaceId: ctx.workspaceId,
+        source: event.source,
+        eventType: event.eventType,
+        timestamp: event.timestamp,
+        entity: {
+          id: event.entityId,
+          type: event.entityType,
+          title: event.title,
+          description: event.description,
+          status: event.status || 'unknown',
+          url: event.metadata?.['url'] as string | undefined,
+        },
+        teamContext: {
+          teamId: (event.metadata?.['team'] as { id: string } | undefined)?.id,
+          teamName: (event.metadata?.['team'] as { name: string } | undefined)
+            ?.name,
+          projectId: (event.metadata?.['project'] as { id: string } | undefined)
+            ?.id,
+        },
+        references: {
+          mentionedUsers: [],
+          linkedIssues: [],
+          linkedPRs: [],
+          blockerMentions: [],
+          decisionMentions: [],
+        },
+        rawText: {
+          title: event.title,
+          body: event.description,
+        },
+      }));
 
     // 4. Inbox Generation
     const inboxGraph = this.graphsFactory.getInboxGraph();
@@ -220,32 +224,36 @@ export class LineaFacade {
       this.buildGraphConfig(ctx),
     );
 
-    const signalContexts = normalizedEvents.map((event) => ({
-      signalId: event.id,
-      workspaceId: ctx.workspaceId,
-      source: event.source,
-      eventType: event.eventType,
-      timestamp: event.timestamp,
-      entity: {
-        id: event.entityId,
-        type: event.entityType,
-        title: event.title,
-        description: event.description,
-        status: event.status || 'unknown',
-      },
-      teamContext: {},
-      references: {
-        mentionedUsers: [],
-        linkedIssues: [],
-        linkedPRs: [],
-        blockerMentions: [],
-        decisionMentions: [],
-      },
-      rawText: {
-        title: event.title,
-        body: event.description,
-      },
-    }));
+    const signalContexts =
+      (classificationResult.signalContexts as
+        | typeof classificationResult.signalContexts
+        | undefined) ??
+      normalizedEvents.map((event) => ({
+        signalId: event.id,
+        workspaceId: ctx.workspaceId,
+        source: event.source,
+        eventType: event.eventType,
+        timestamp: event.timestamp,
+        entity: {
+          id: event.entityId,
+          type: event.entityType,
+          title: event.title,
+          description: event.description,
+          status: event.status || 'unknown',
+        },
+        teamContext: {},
+        references: {
+          mentionedUsers: [],
+          linkedIssues: [],
+          linkedPRs: [],
+          blockerMentions: [],
+          decisionMentions: [],
+        },
+        rawText: {
+          title: event.title,
+          body: event.description,
+        },
+      }));
 
     const inboxGraph = this.graphsFactory.getInboxGraph();
     const inboxResult = await inboxGraph.invoke(
@@ -336,5 +344,30 @@ export class LineaFacade {
       candidate,
       input.sessionId,
     );
+  }
+
+  async hasRecentInboxThread(input: {
+    workspaceId: string;
+    userId: string;
+    title: string;
+    type?: InboxItemType;
+    entityRefs?: {
+      ticketIds?: string[];
+      prIds?: string[];
+      userIds?: string[];
+      teamIds?: string[];
+    };
+    withinMinutes?: number;
+  }): Promise<boolean> {
+    const existing = await this.assistantService.findRecentInboxThread({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      title: input.title,
+      type: input.type,
+      entityRefs: input.entityRefs,
+      withinMinutes: input.withinMinutes,
+    });
+
+    return Boolean(existing);
   }
 }

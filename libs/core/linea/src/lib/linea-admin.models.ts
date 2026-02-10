@@ -106,6 +106,12 @@ export class LineaMemoryListResponse {
 }
 
 @ObjectType()
+export class LineaMemoryTimelineResponse {
+  @Field(() => [LineaMemory])
+  memories!: LineaMemory[];
+}
+
+@ObjectType()
 export class LineaSkill {
   @Field()
   id!: string;
@@ -334,6 +340,30 @@ export class LineaMemoryQueryInput {
   @Min(1)
   @Max(200)
   limit?: number;
+}
+
+@InputType()
+export class LineaMemoryTimelineInput {
+  @Field()
+  @IsString()
+  entityId!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  entityType?: string;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  includeArchived?: boolean;
 }
 
 @InputType()

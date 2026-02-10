@@ -21,6 +21,7 @@ import {
   type MemoryItem,
   type MemoryCategory,
   type MemoryNamespace,
+  type EntityRefs,
 } from '../types';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
@@ -194,40 +195,32 @@ export class GraphsFactory {
     const extractContext = async (
       state: ClassificationState,
     ): Promise<Partial<ClassificationState>> => {
-      const contexts: SignalContext[] = state.normalizedEvents.map((event) => ({
-        signalId: event.id,
-        workspaceId: state.workspaceId,
-        source: event.source,
-        eventType: event.eventType,
-        timestamp: event.timestamp,
-        entity: {
-          id: event.entityId,
-          type: event.entityType,
-          title: event.title,
-          description: event.description,
-          status: event.status || 'unknown',
-          url: event.metadata?.['url'] as string | undefined,
-        },
-        prContext: this.extractPrContext(event),
-        teamContext: {
-          teamId: (event.metadata?.['team'] as { id: string } | undefined)?.id,
-          teamName: (event.metadata?.['team'] as { name: string } | undefined)
-            ?.name,
-          projectId: (event.metadata?.['project'] as { id: string } | undefined)
-            ?.id,
-        },
-        references: {
-          mentionedUsers: [],
-          linkedIssues: [],
-          linkedPRs: [],
-          blockerMentions: [],
-          decisionMentions: [],
-        },
-        rawText: {
-          title: event.title,
-          body: event.description,
-        },
-      }));
+      const contexts: SignalContext[] = state.normalizedEvents.map((event) => {
+        const references = this.extractReferences(event);
+        return {
+          signalId: event.id,
+          workspaceId: state.workspaceId,
+          source: event.source,
+          eventType: event.eventType,
+          timestamp: event.timestamp,
+          entity: {
+            id: event.entityId,
+            type: event.entityType,
+            title: event.title,
+            description: event.description,
+            status: event.status || 'unknown',
+            url: event.metadata?.['url'] as string | undefined,
+          },
+          prContext: this.extractPrContext(event),
+          ticketContext: this.extractTicketContext(event),
+          teamContext: this.extractTeamContext(event),
+          references,
+          rawText: {
+            title: event.title,
+            body: event.description,
+          },
+        };
+      });
       return { signalContexts: contexts };
     };
 
@@ -266,6 +259,11 @@ export class GraphsFactory {
 
           if (suggestion.importance < 0.3) continue;
 
+          const entityRefs = this.buildEntityRefs(context);
+          const relatedEntityIds = this.buildRelatedEntityIds(
+            context,
+            entityRefs,
+          );
           const memory = await memoryService.saveMemory(ctx, {
             namespace: suggestion.namespace,
             category: suggestion.category,
@@ -277,14 +275,9 @@ export class GraphsFactory {
             importance: suggestion.importance,
             confidence: reasoning.classification.importance,
             sourceEventIds: [signalId],
-            relatedEntityIds: [context.entity.id],
+            relatedEntityIds,
             relatedMemoryIds: [],
-            entityRefs: {
-              ticketIds: context.ticketContext
-                ? [context.entity.id]
-                : undefined,
-              prIds: context.prContext ? [context.entity.id] : undefined,
-            },
+            entityRefs,
           });
           memoriesCreated.push(memory);
 
@@ -297,6 +290,11 @@ export class GraphsFactory {
           reasoning.classification.importance > 0.7 &&
           reasoning.classification.secondaryCategories.length > 0
         ) {
+          const entityRefs = this.buildEntityRefs(context);
+          const relatedEntityIds = this.buildRelatedEntityIds(
+            context,
+            entityRefs,
+          );
           for (const category of reasoning.classification.secondaryCategories) {
             const memory = await memoryService.saveMemory(ctx, {
               namespace: this.mapCategoryToNamespace(category),
@@ -306,9 +304,9 @@ export class GraphsFactory {
               importance: reasoning.classification.importance * 0.8, // Slightly lower for secondary
               confidence: reasoning.classification.importance,
               sourceEventIds: [signalId],
-              relatedEntityIds: [context.entity.id],
+              relatedEntityIds,
               relatedMemoryIds: [],
-              entityRefs: {},
+              entityRefs,
             });
             memoriesCreated.push(memory);
           }
@@ -342,6 +340,7 @@ export class GraphsFactory {
 
         const { blockerAnalysis, classification } = reasoning;
 
+        const entityRefs = this.buildEntityRefs(context);
         candidates.push({
           id: `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           workspaceId: state.workspaceId,
@@ -360,14 +359,7 @@ export class GraphsFactory {
           requiresApproval: classification.suggestedActions.some(
             (a) => a.requiresApproval,
           ),
-          entityRefs: {
-            ticketIds: blockerAnalysis.affectedEntities.filter((e) =>
-              e.startsWith('ticket-'),
-            ),
-            prIds: blockerAnalysis.affectedEntities.filter((e) =>
-              e.startsWith('pr-'),
-            ),
-          },
+          entityRefs,
           createdAt: new Date(),
         });
       }
@@ -386,6 +378,7 @@ export class GraphsFactory {
 
         const { driftAnalysis, classification } = reasoning;
 
+        const entityRefs = this.buildEntityRefs(context);
         candidates.push({
           id: `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           workspaceId: state.workspaceId,
@@ -403,7 +396,7 @@ export class GraphsFactory {
             (a) => a.action,
           ),
           requiresApproval: driftAnalysis.driftType === 'scope_creep',
-          entityRefs: {},
+          entityRefs,
           createdAt: new Date(),
         });
       }
@@ -427,6 +420,7 @@ export class GraphsFactory {
 
         if (highSeverityConcerns.length === 0) continue;
 
+        const entityRefs = this.buildEntityRefs(context);
         candidates.push({
           id: `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           workspaceId: state.workspaceId,
@@ -445,9 +439,7 @@ export class GraphsFactory {
           requiresApproval: highSeverityConcerns.some(
             (c) => c.type === 'security' || c.type === 'breaking_change',
           ),
-          entityRefs: {
-            prIds: context.prContext ? [context.entity.id] : undefined,
-          },
+          entityRefs,
           createdAt: new Date(),
         });
       }
@@ -477,6 +469,7 @@ export class GraphsFactory {
         if (!updateAnalysis.shouldNotify || !updateAnalysis.isSignificant)
           continue;
 
+        const entityRefs = this.buildEntityRefs(context);
         candidates.push({
           id: `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           workspaceId: state.workspaceId,
@@ -490,7 +483,7 @@ export class GraphsFactory {
             .filter((a) => a.priority !== 'later')
             .map((a) => a.action),
           requiresApproval: false,
-          entityRefs: {},
+          entityRefs,
           createdAt: new Date(),
         });
       }
@@ -688,6 +681,265 @@ export class GraphsFactory {
         timestamp: event.timestamp,
       };
     });
+  }
+
+  private extractReferences(event: NormalizedEvent): SignalContext['references'] {
+    const text = [event.title, event.description].filter(Boolean).join('\n');
+    const linkedIssues = this.extractTicketIdsFromText(text);
+    const linkedPRs = this.extractGithubPrIdsFromText(text);
+    const mentionedUsers = new Set<string>();
+
+    const slackMentions = this.extractSlackMentionsFromText(text);
+    slackMentions.forEach((id) => mentionedUsers.add(id));
+
+    if (event.source === 'slack') {
+      const eventData = event.metadata?.['event'] as
+        | { user?: string }
+        | undefined;
+      if (eventData?.user) {
+        mentionedUsers.add(`slack:${eventData.user}`);
+      }
+    }
+
+    if (event.source === 'linear') {
+      const data = event.metadata?.['data'] as
+        | {
+            identifier?: string;
+            assignee?: { id?: string };
+            creator?: { id?: string };
+            updatedBy?: { id?: string };
+            subscriberIds?: string[];
+          }
+        | undefined;
+
+      if (data?.identifier) {
+        linkedIssues.push(data.identifier);
+      }
+      if (data?.assignee?.id) {
+        mentionedUsers.add(data.assignee.id);
+      }
+      if (data?.creator?.id) {
+        mentionedUsers.add(data.creator.id);
+      }
+      if (data?.updatedBy?.id) {
+        mentionedUsers.add(data.updatedBy.id);
+      }
+      if (Array.isArray(data?.subscriberIds)) {
+        data?.subscriberIds.forEach((id) => mentionedUsers.add(id));
+      }
+    }
+
+    if (event.source === 'github') {
+      const pr = event.metadata?.['pull_request'] as
+        | {
+            user?: { login?: string };
+            assignee?: { login?: string };
+            assignees?: Array<{ login?: string }>;
+            requested_reviewers?: Array<{ login?: string }>;
+            number?: number;
+          }
+        | undefined;
+      const issue = event.metadata?.['issue'] as
+        | {
+            user?: { login?: string };
+            assignee?: { login?: string };
+            assignees?: Array<{ login?: string }>;
+          }
+        | undefined;
+      const repo = event.metadata?.['repo'] as string | undefined;
+
+      const addLogin = (login?: string) => {
+        if (login) {
+          mentionedUsers.add(`github:${login}`);
+        }
+      };
+
+      addLogin(pr?.user?.login);
+      addLogin(pr?.assignee?.login);
+      pr?.assignees?.forEach((assignee) => addLogin(assignee.login));
+      pr?.requested_reviewers?.forEach((reviewer) =>
+        addLogin(reviewer.login),
+      );
+      addLogin(issue?.user?.login);
+      addLogin(issue?.assignee?.login);
+      issue?.assignees?.forEach((assignee) => addLogin(assignee.login));
+
+      if (repo && pr?.number) {
+        linkedPRs.push(`gh-pr:${repo}:${pr.number}`);
+      }
+    }
+
+    const blockerMentions = /block(ed|er|ing)?/i.test(text) ? ['blocker'] : [];
+    const decisionMentions = /decision|decided|decide/i.test(text)
+      ? ['decision']
+      : [];
+
+    return {
+      mentionedUsers: this.uniqueStrings(Array.from(mentionedUsers)),
+      linkedIssues: this.uniqueStrings(linkedIssues),
+      linkedPRs: this.uniqueStrings(linkedPRs),
+      blockerMentions,
+      decisionMentions,
+    };
+  }
+
+  private extractTicketContext(
+    event: NormalizedEvent,
+  ): SignalContext['ticketContext'] {
+    if (event.source !== 'linear' || event.entityType !== 'ticket') {
+      return undefined;
+    }
+
+    const data = event.metadata?.['data'] as
+      | {
+          priority?: number;
+          labels?: Array<{ name?: string }>;
+          estimate?: number;
+          cycle?: { id?: string };
+          parent?: { id?: string; identifier?: string };
+        }
+      | undefined;
+
+    const labels =
+      data?.labels
+        ?.map((label) => label.name)
+        .filter((label): label is string => Boolean(label)) || [];
+
+    return {
+      priority: data?.priority ?? 0,
+      labels,
+      estimate: data?.estimate,
+      cycleId: data?.cycle?.id,
+      parentId: data?.parent?.identifier ?? data?.parent?.id,
+    };
+  }
+
+  private extractTeamContext(
+    event: NormalizedEvent,
+  ): SignalContext['teamContext'] {
+    const context: SignalContext['teamContext'] = {
+      teamId: undefined,
+      teamName: undefined,
+      productArea: undefined,
+      projectId: undefined,
+    };
+
+    if (event.source === 'linear') {
+      const data = event.metadata?.['data'] as
+        | {
+            team?: { id?: string; name?: string };
+            project?: { id?: string; name?: string };
+          }
+        | undefined;
+
+      context.teamId = data?.team?.id;
+      context.teamName = data?.team?.name;
+      context.projectId = data?.project?.id;
+    }
+
+    if (event.source === 'github') {
+      const repo = event.metadata?.['repo'] as string | undefined;
+      if (repo) {
+        context.projectId = repo;
+      }
+    }
+
+    return context;
+  }
+
+  private buildEntityRefs(context: SignalContext): EntityRefs {
+    const userIds = new Set<string>(context.references.mentionedUsers || []);
+    const ticketIds = new Set<string>(context.references.linkedIssues || []);
+    const prIds = new Set<string>(context.references.linkedPRs || []);
+    const projectIds = new Set<string>();
+    const teamIds = new Set<string>();
+
+    if (context.teamContext?.teamId) {
+      teamIds.add(context.teamContext.teamId);
+    }
+    if (context.teamContext?.projectId) {
+      projectIds.add(context.teamContext.projectId);
+    }
+
+    if (context.entity.type === 'ticket') {
+      if (ticketIds.size === 0) {
+        ticketIds.add(context.entity.id);
+      }
+    }
+    if (context.entity.type === 'pr') {
+      if (prIds.size === 0) {
+        prIds.add(context.entity.id);
+      }
+    }
+
+    if (context.ticketContext?.parentId) {
+      ticketIds.add(context.ticketContext.parentId);
+    }
+
+    for (const prId of prIds) {
+      if (prId.startsWith('gh-pr:')) {
+        const parts = prId.split(':');
+        if (parts.length >= 3 && parts[1]) {
+          projectIds.add(parts[1]);
+        }
+      }
+    }
+
+    return {
+      userIds: this.uniqueStrings(Array.from(userIds), true),
+      ticketIds: this.uniqueStrings(Array.from(ticketIds), true),
+      prIds: this.uniqueStrings(Array.from(prIds), true),
+      projectIds: this.uniqueStrings(Array.from(projectIds), true),
+      teamIds: this.uniqueStrings(Array.from(teamIds), true),
+    };
+  }
+
+  private buildRelatedEntityIds(
+    context: SignalContext,
+    entityRefs: EntityRefs,
+  ): string[] {
+    const related = new Set<string>([context.entity.id]);
+    const addAll = (values?: string[]) => {
+      values?.forEach((value) => {
+        if (value) {
+          related.add(value);
+        }
+      });
+    };
+
+    addAll(entityRefs.userIds);
+    addAll(entityRefs.ticketIds);
+    addAll(entityRefs.prIds);
+    addAll(entityRefs.projectIds);
+    addAll(entityRefs.teamIds);
+
+    return Array.from(related);
+  }
+
+  private extractTicketIdsFromText(text: string): string[] {
+    if (!text) return [];
+    const matches = text.match(/\b[A-Z][A-Z0-9]+-\d+\b/g);
+    return matches ? Array.from(new Set(matches)) : [];
+  }
+
+  private extractGithubPrIdsFromText(text: string): string[] {
+    if (!text) return [];
+    const matches = Array.from(
+      text.matchAll(/https?:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/gi),
+    );
+    const ids = matches.map((match) => `gh-pr:${match[1]}:${match[2]}`);
+    return ids.length ? Array.from(new Set(ids)) : [];
+  }
+
+  private extractSlackMentionsFromText(text: string): string[] {
+    if (!text) return [];
+    const matches = Array.from(text.matchAll(/<@([A-Z0-9]+)>/g));
+    return matches.map((match) => `slack:${match[1]}`);
+  }
+
+  private uniqueStrings(values: string[], allowEmpty = false): string[] {
+    const filtered = allowEmpty ? values : values.filter(Boolean);
+    return filtered.length ? Array.from(new Set(filtered)) : [];
   }
 
   private extractPrContext(event: NormalizedEvent): SignalContext['prContext'] {

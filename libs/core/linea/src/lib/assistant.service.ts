@@ -21,6 +21,11 @@ import { LineaEventType } from './thread.models';
 @Injectable()
 export class AssistantService {
   private readonly logger = new Logger(AssistantService.name);
+  private static readonly DEDUPE_STATUSES = new Set([
+    'actioned',
+    'dismissed',
+    'auto_resolved',
+  ]);
 
   constructor(
     @Inject(LINEA_STORE)
@@ -351,6 +356,116 @@ Title:`;
     });
 
     return { remoteId: threadId };
+  }
+
+  async findRecentInboxThread(input: {
+    workspaceId: string;
+    userId: string;
+    title: string;
+    type?: InboxItemType;
+    entityRefs?: StoredThread['entityRefs'];
+    withinMinutes?: number;
+  }): Promise<StoredThread | null> {
+    const { workspaceId, userId, title, type, entityRefs } = input;
+    const withinMinutes = input.withinMinutes ?? 120;
+    const normalizedTitle = this.normalizeInboxText(title);
+    if (!normalizedTitle) {
+      return null;
+    }
+
+    const namespace = ['workspaces', workspaceId, 'threads', userId];
+    const cutoff = Date.now() - withinMinutes * 60_000;
+    const targetRefs = this.normalizeInboxRefs(entityRefs);
+
+    try {
+      const results = await this.store.search(namespace, {
+        query: '*',
+        filter: { archived: false },
+        limit: 500,
+      });
+
+      for (const item of results || []) {
+        const value = item.value || {};
+        if (!value['isInboxThread']) continue;
+        if (type && value['inboxItemType'] !== type) continue;
+
+        const status = value['inboxStatus'] as string | undefined;
+        if (status && AssistantService.DEDUPE_STATUSES.has(status)) continue;
+
+        const createdAtRaw = value['createdAt'] as string | undefined;
+        const createdAt = createdAtRaw
+          ? new Date(createdAtRaw).getTime()
+          : 0;
+        if (!createdAt || createdAt < cutoff) continue;
+
+        const existingTitle = this.normalizeInboxText(
+          value['title'] as string | undefined,
+        );
+        if (!existingTitle || existingTitle !== normalizedTitle) continue;
+
+        if (targetRefs.hasAny) {
+          const existingRefs = this.normalizeInboxRefs(
+            value['entityRefs'] as StoredThread['entityRefs'],
+          );
+          if (!this.hasRefOverlap(targetRefs, existingRefs)) continue;
+        }
+
+        return value as StoredThread;
+      }
+    } catch (error) {
+      this.logger.error(
+        { error, workspaceId, userId },
+        '[AssistantService] findRecentInboxThread error:',
+      );
+    }
+
+    return null;
+  }
+
+  private normalizeInboxText(value?: string): string {
+    return (value || '').trim().toLowerCase();
+  }
+
+  private normalizeInboxRefs(refs?: StoredThread['entityRefs']): {
+    ticketIds: Set<string>;
+    prIds: Set<string>;
+    userIds: Set<string>;
+    teamIds: Set<string>;
+    hasAny: boolean;
+  } {
+    const toSet = (values?: string[]) =>
+      new Set(
+        (values || [])
+          .map((entry) => entry.trim().toLowerCase())
+          .filter(Boolean),
+      );
+    const ticketIds = toSet(refs?.ticketIds);
+    const prIds = toSet(refs?.prIds);
+    const userIds = toSet(refs?.userIds);
+    const teamIds = toSet(refs?.teamIds);
+    const hasAny =
+      ticketIds.size + prIds.size + userIds.size + teamIds.size > 0;
+
+    return { ticketIds, prIds, userIds, teamIds, hasAny };
+  }
+
+  private hasRefOverlap(
+    left: ReturnType<AssistantService['normalizeInboxRefs']>,
+    right: ReturnType<AssistantService['normalizeInboxRefs']>,
+  ): boolean {
+    return (
+      this.hasSetOverlap(left.ticketIds, right.ticketIds) ||
+      this.hasSetOverlap(left.prIds, right.prIds) ||
+      this.hasSetOverlap(left.userIds, right.userIds) ||
+      this.hasSetOverlap(left.teamIds, right.teamIds)
+    );
+  }
+
+  private hasSetOverlap(left: Set<string>, right: Set<string>): boolean {
+    for (const entry of left) {
+      if (right.has(entry)) return true;
+    }
+    return false;
   }
 
   async updateInboxStatus(threadId: string, status: string): Promise<void> {

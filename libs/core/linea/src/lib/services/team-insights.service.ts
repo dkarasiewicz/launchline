@@ -107,18 +107,39 @@ export class TeamInsightsService {
       if (memory.namespace === 'team') {
         const identity = this.parseIdentity(memory);
         if (identity?.id) {
-          if (!referenceMaps.userLabels.has(identity.id)) {
-            referenceMaps.userLabels.set(identity.id, identity.displayName);
-          }
-          if (!referenceMaps.userNodes.has(identity.id)) {
-            const nodeId = this.userNodeId(identity.id);
-            referenceMaps.userNodes.set(identity.id, nodeId);
-            this.ensureNode(nodeMap, {
-              id: nodeId,
-              label: identity.displayName || this.shortLabel(identity.id),
-              type: 'person',
-            });
-          }
+          const accountKeys = [
+            identity.accounts?.linearId,
+            identity.accounts?.slackId
+              ? `slack:${identity.accounts.slackId}`
+              : undefined,
+            identity.accounts?.githubLogin
+              ? `github:${identity.accounts.githubLogin}`
+              : undefined,
+          ].filter(Boolean) as string[];
+
+          const existingNodeId =
+            accountKeys
+              .map((key) => referenceMaps.userNodes.get(key))
+              .find(Boolean) ||
+            referenceMaps.userNodes.get(identity.id) ||
+            undefined;
+
+          const nodeId = existingNodeId || this.userNodeId(identity.id);
+          const label = identity.displayName || this.shortLabel(identity.id);
+
+          referenceMaps.userLabels.set(identity.id, label);
+          referenceMaps.userNodes.set(identity.id, nodeId);
+
+          accountKeys.forEach((key) => {
+            referenceMaps.userLabels.set(key, label);
+            referenceMaps.userNodes.set(key, nodeId);
+          });
+
+          this.ensureNode(nodeMap, {
+            id: nodeId,
+            label,
+            type: 'person',
+          });
         }
       }
     }
@@ -733,7 +754,15 @@ export class TeamInsightsService {
 
   private parseIdentity(
     memory: MemoryItem,
-  ): { id: string; displayName: string } | null {
+  ): {
+    id: string;
+    displayName: string;
+    accounts?: {
+      linearId?: string;
+      slackId?: string;
+      githubLogin?: string;
+    };
+  } | null {
     if (!memory.content || memory.content.length < 2) {
       return null;
     }
@@ -743,9 +772,25 @@ export class TeamInsightsService {
     }
 
     try {
-      const parsed = JSON.parse(memory.content) as { id?: string; displayName?: string };
+      const parsed = JSON.parse(memory.content) as {
+        id?: string;
+        displayName?: string;
+        accounts?: {
+          github?: { login?: string };
+          linear?: { id?: string };
+          slack?: { id?: string };
+        };
+      };
       if (parsed?.id && parsed?.displayName) {
-        return { id: parsed.id, displayName: parsed.displayName };
+        return {
+          id: parsed.id,
+          displayName: parsed.displayName,
+          accounts: {
+            linearId: parsed.accounts?.linear?.id,
+            slackId: parsed.accounts?.slack?.id,
+            githubLogin: parsed.accounts?.github?.login,
+          },
+        };
       }
     } catch (error) {
       this.logger.debug({ err: error }, 'Failed to parse identity memory');
