@@ -4,17 +4,18 @@ import type { JobsOptions, JobType, Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
 import {
   LINEA_HEARTBEAT_INTERVAL_MS,
+  LINEA_HEARTBEAT_REFLECTION_INTERVAL_MS,
   LINEA_JOB_HEARTBEAT,
   LINEA_JOB_SCHEDULED_TASK,
   LINEA_JOBS_QUEUE,
 } from './linea-jobs.constants';
 import type {
   LineaHeartbeatJobData,
-  LineaJobSummary,
   LineaJobStatus,
+  LineaJobSummary,
   LineaScheduledTaskJobData,
-  ScheduleTaskRequest,
   ScheduledTaskResult,
+  ScheduleTaskRequest,
 } from './linea-jobs.types';
 
 @Injectable()
@@ -26,10 +27,7 @@ export class LineaJobsService {
     private readonly queue: Queue,
   ) {}
 
-  async ensureHeartbeat(
-    workspaceId: string,
-    userId: string,
-  ): Promise<void> {
+  async ensureHeartbeat(workspaceId: string, userId: string): Promise<void> {
     const jobId = `heartbeat:${workspaceId}`;
     try {
       await this.queue.add(
@@ -47,21 +45,18 @@ export class LineaJobsService {
         },
       );
 
-      this.logger.log(
-        { workspaceId, jobId },
-        'Scheduled Linea heartbeat',
-      );
+      this.logger.log({ workspaceId, jobId }, 'Scheduled Linea heartbeat');
     } catch (error) {
       this.logger.warn(
         { err: error, workspaceId, jobId },
         'Failed to schedule Linea heartbeat',
       );
     }
+
+    await this.ensureHeartbeatReflections(workspaceId, userId);
   }
 
-  async scheduleTask(
-    input: ScheduleTaskRequest,
-  ): Promise<ScheduledTaskResult> {
+  async scheduleTask(input: ScheduleTaskRequest): Promise<ScheduledTaskResult> {
     const taskId = input.name
       ? `scheduled:${input.workspaceId}:${input.name}`
       : `scheduled:${input.workspaceId}:${randomUUID()}`;
@@ -94,18 +89,10 @@ export class LineaJobsService {
         tz: input.timezone,
       };
     } else if (input.runAt) {
-      const delayMs = Math.max(
-        0,
-        input.runAt.getTime() - Date.now(),
-      );
-      options.delay = delayMs;
+      options.delay = Math.max(0, input.runAt.getTime() - Date.now());
     }
 
-    await this.queue.add(
-      LINEA_JOB_SCHEDULED_TASK,
-      data,
-      options,
-    );
+    await this.queue.add(LINEA_JOB_SCHEDULED_TASK, data, options);
 
     this.logger.log(
       { workspaceId: input.workspaceId, taskId, cron: input.cron },
@@ -182,10 +169,9 @@ export class LineaJobsService {
     const schedulers = await this.queue.getJobSchedulers(0, limit);
 
     for (const scheduler of schedulers) {
-      const templateData =
-        scheduler.template?.data as Partial<
-          LineaHeartbeatJobData | LineaScheduledTaskJobData
-        > | undefined;
+      const templateData = scheduler.template?.data as
+        | Partial<LineaHeartbeatJobData | LineaScheduledTaskJobData>
+        | undefined;
 
       const schedulerId = scheduler.id || scheduler.key || '';
       const matchesWorkspace =
@@ -207,9 +193,7 @@ export class LineaJobsService {
         cron: scheduler.pattern,
         timezone: scheduler.tz,
         nextRunAt: scheduler.next ? new Date(scheduler.next) : undefined,
-        runAt: scheduler.startDate
-          ? new Date(scheduler.startDate)
-          : undefined,
+        runAt: scheduler.startDate ? new Date(scheduler.startDate) : undefined,
       });
     }
 
@@ -240,5 +224,59 @@ export class LineaJobsService {
     if (state === 'paused') return 'paused';
 
     return 'waiting';
+  }
+
+  private async ensureHeartbeatReflections(
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
+    const reflections = [
+      {
+        id: 'project',
+        task: 'Review current projects and risks. Summarize progress, blockers, and where attention is needed.',
+      },
+      {
+        id: 'team',
+        task: 'Review team member updates and collaboration signals. Highlight wins, support needs, and potential handoffs.',
+      },
+      {
+        id: 'agent',
+        task: "Review Linea's recent runs and suggest agent improvements (prompts, tools, or workflows).",
+      },
+    ];
+
+    for (const reflection of reflections) {
+      const taskId = `heartbeat-reflection:${workspaceId}:${reflection.id}`;
+      try {
+        await this.queue.add(
+          LINEA_JOB_SCHEDULED_TASK,
+          {
+            type: 'scheduled_task',
+            workspaceId,
+            userId,
+            task: reflection.task,
+            taskId,
+            mode: 'suggest',
+            deliverToInbox: true,
+          },
+          {
+            jobId: taskId,
+            repeat: { every: LINEA_HEARTBEAT_REFLECTION_INTERVAL_MS },
+            removeOnComplete: 50,
+            removeOnFail: 50,
+          },
+        );
+
+        this.logger.log(
+          { workspaceId, taskId },
+          'Scheduled Linea heartbeat reflection',
+        );
+      } catch (error) {
+        this.logger.warn(
+          { err: error, workspaceId, taskId },
+          'Failed to schedule Linea heartbeat reflection',
+        );
+      }
+    }
   }
 }
